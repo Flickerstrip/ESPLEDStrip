@@ -1,3 +1,4 @@
+// vim:ts=2 sw=2:
 #include <SoftwareSPI.h>
 #include <ESP8266WiFi.h>
 #include <FlashMemory.h>
@@ -5,6 +6,7 @@
 #include <EEPROM.h>
 
 #include "NetworkManager.h"
+#include "PatternManager.h"
 
 #include "Arduino.h"
 
@@ -12,32 +14,24 @@
 #define SPI_MOSI 14
 #define SPI_MISO 16
 #define MEM_CS 4
- 
-int ledPin = 13;
+#define LED_STRIP 13
+
 FlashMemory flash(SPI_SCK,SPI_MOSI,SPI_MISO,MEM_CS);
-ESPWS2812 strip(ledPin,150,true);
+ESPWS2812 strip(LED_STRIP,150,true);
 NetworkManager network;
+PatternManager patternManager(&flash);
+
 uint8_t macAddr[WL_MAC_ADDR_LENGTH];
 uint16_t stripLength = 150;
 uint8_t leds[450];
+int lastSavedPattern = -1;
 
 bool debug = true;
 const char* configssid = "esp8266confignetwork";
-
-char buf[1000];
-struct PatternMetadata {
-  char name[16];
-  uint32_t address;
-  uint32_t len;
-  uint16_t frames;
-  uint8_t flags;
-  uint8_t fps;
-};
-
 struct Configuration {
-    char ssid[50];
-    char password[50];
-    byte selectedPattern;
+  char ssid[50];
+  char password[50];
+  byte selectedPattern;
 };
 
 struct PacketStructure {
@@ -46,10 +40,6 @@ struct PacketStructure {
 	uint32_t param2;
 };
 
-const int MAX_PATTERNS = 17;
-int patternCount = 0;
-PatternMetadata patterns[MAX_PATTERNS];
-int lastSavedPattern = -1;
 
 Configuration config;
 
@@ -69,8 +59,10 @@ void setup() {
 
   loadConfiguration();
 
-  patternCount = loadPatterns();
-  if (patternCount != 0) selectPattern(0);
+  patternManager.loadPatterns();
+  Serial.print("Loaded patterns: ");
+  Serial.println(patternManager.getPatternCount());
+  if (patternManager.getPatternCount() != 0) patternManager.selectPattern(0);
 
   if (debug) Serial.print("Connecting to ");
   if (debug) Serial.println(config.ssid);
@@ -87,9 +79,7 @@ void setup() {
 
 void factoryReset() {
   Serial.println("Resetting to Factory Defaults");
-  clearPatterns();
-
-  generateDefaultPatterns();
+  patternManager.resetPatternsToDefault();
 
   EEPROM.begin(sizeof(Configuration));
   for (int i=0; i<sizeof(Configuration); i++) {
@@ -125,89 +115,6 @@ void saveConfiguration() {
 void setNetwork(String ssid,String password) {
   ssid.toCharArray((char*)&config.ssid,50);
   password.toCharArray((char *)&config.password,50);
-}
-
-void generateDefaultPatterns() {
-  Serial.println("generating new pattern");
-  PatternMetadata newpat;
-  char foo[] = "TwoBlink";
-  memcpy(newpat.name, foo, strlen(foo)+1);
-  newpat.len = 10*3*2;
-  newpat.frames = 2;
-  newpat.flags = 0;
-  newpat.fps = 1;
-  for (int i=0; i<10; i++) {
-    buf[i*3+0] = 255;
-    buf[i*3+1] = 255;
-    buf[i*3+2] = 255;
-  }
-  for (int i=0; i<10; i++) {
-    buf[30+i*3+0] = 255;
-    buf[30+i*3+1] = 0;
-    buf[30+i*3+2] = 0;
-  }
-
-  byte patindex = saveLedPatternMetadata(&newpat);
-  saveLedPatternBody(patindex,0,(byte*)buf,10*3*2);
-}
-
-void clearPatterns() {
-  flash.erasePage(0x100);
-  flash.erasePage(0x200);
-  patternCount = 0;
-  config.selectedPattern = 0xff;
-  lastSavedPattern = -1;
-}
-
-uint32_t findInsertLocation(uint32_t len) {
-  for (int i=0; i<patternCount; i++) {
-    uint32_t firstAvailablePage = ((patterns[i].address + patterns[i].len) & 0xffffff00) + 0x100;
-
-    if (i == patternCount - 1) return i+1; //last pattern
-
-    uint32_t spaceAfter = patterns[i+1].address - firstAvailablePage;
-    if (spaceAfter > len) {
-      return i+1;
-    }
-  }
-  return 0;
-}
-
-byte saveLedPatternMetadata(struct PatternMetadata * pat) {
-  byte insert = findInsertLocation(pat->len);
-  if (insert == 0) {
-      pat->address = 0x300;
-  } else {
-      //address is on the page after the previous pattern
-      pat->address = ((patterns[insert-1].address + patterns[insert-1].len) & 0xffffff00) + 0x100;
-  }
-
-  for (int i=patternCount; i>insert; i--) {
-    memcpy(&patterns[i],&patterns[i-1],sizeof(PatternMetadata));
-  }
-  patternCount ++;
-
-  memcpy(&patterns[insert],pat,sizeof(PatternMetadata));
-  flash.writeBytes(0x100+sizeof(PatternMetadata)*insert,(byte *)(&patterns[insert]),(patternCount-insert)*sizeof(PatternMetadata));
-
-  return insert;
-}
-
-void saveLedPatternBody(int pattern, uint32_t patternStartPage, byte * payload, uint32_t len) {
-  PatternMetadata * pat = &patterns[pattern];
-
-  uint32_t writeLocation = pat->address + patternStartPage*0x100;
-  flash.writeBytes(writeLocation,payload,len);
-}
-
-int loadPatterns() {
-  flash.readBytes(0x100,(byte *)patterns,0x200);
-  PatternMetadata * ptr = patterns;
-  for (int i=0; i<MAX_PATTERNS; i++) {
-    if (ptr->address == 0xffffffff) return i;
-    ptr++;
-  }
-  return 20;
 }
 
 void sendMacAddress() {
@@ -250,21 +157,6 @@ void serialLine() {
   }
 }
 
-void deletePattern(byte n) {
-  patternCount--;
-  for (int i=n; i<patternCount; i++) {
-    memcpy(&patterns[i],&patterns[i+1],sizeof(PatternMetadata));
-  }
-  if (n <= config.selectedPattern) {
-    selectPattern(config.selectedPattern-1);
-  }
-
-  byte * ptr = (byte*)(&patterns[patternCount]);
-  for (int i=0; i<sizeof(PatternMetadata); i++) {
-    ptr[i] = 0xff;
-  }
-  flash.writeBytes(0x100+sizeof(PatternMetadata)*n,(byte *)(&patterns[n]),(patternCount-n+1)*sizeof(PatternMetadata));
-}
 
 const byte UNUSED = 0;
 const byte PING = 1;
@@ -283,115 +175,62 @@ void processBuffer(byte * buf, int len) {
   if (packet->type == PING) {
     //just respond with ready (below)
   } else if (packet->type == DELETE_PATTERN) {
-    deletePattern(packet->param1);
+    patternManager.deletePattern(packet->param1);
   } else if (packet->type == CLEAR_PATTERNS) {
-    clearPatterns();
+    patternManager.clearPatterns();
   } else if (packet->type == SELECT_PATTERN) {
     byte pattern = packet->param1;
-    selectPattern(pattern);
+    patternManager.selectPattern(pattern);
   } else if (packet->type == GET_PATTERNS) {
-    PatternMetadata * pat;
-    int index = 0;
-    char * wh = (char *)buf;
-    for (int i=0; i<patternCount; i++) {
-        if (i != 0) network.getTcp()->write("\n");
-        pat = &patterns[i];
-        int n = sprintf(wh,"%d,%s,%d,%d,%d,%d,%d\n",i,pat->name,pat->address,pat->len,pat->frames,pat->flags,pat->fps);
-        index += n;
-        wh += n;
-    }
+    //TODO change this to binary?
+    byte patternBuffer[1000];
+    int size = patternManager.serializePatterns(patternBuffer,len);
+
     network.getTcp()->write("patterns\n");
-    network.getTcp()->write((byte*)buf,index);
+    for (int i=0; i<size; i++) {
+      network.getTcp()->write(patternBuffer[i]);
+    }
     network.getTcp()->write("\n"); //already have one at end of line
   } else if (packet->type == SAVE_PATTERN) {
     byte * start = buf;
-    PatternMetadata pat;
     //BE AWARE: word alignment seems to matter.. we're copying this to a different location to avoid pointer alignment issues
-    memcpy(&pat,buf,sizeof(PatternMetadata));
+    PatternManager::PatternMetadata pat;
+    memcpy(&pat,buf,sizeof(PatternManager::PatternMetadata));
 
-    start = start + sizeof(PatternMetadata); //start of payload
-    byte pattern = saveLedPatternMetadata(&pat);
+    byte pattern = patternManager.saveLedPatternMetadata(&pat);
 
     lastSavedPattern = pattern;
+    start = start + sizeof(PatternManager::PatternMetadata); //start of payload
     uint32_t remaining = len - (start-(byte*)buf);
     if (remaining > 0) {
-      saveLedPatternBody(pattern,0,(byte*)start,remaining);
+      patternManager.saveLedPatternBody(pattern,0,(byte*)start,remaining);
     }
-    if (pattern == -1) {
-        Serial.println("writing failed ready out");
-        network.getTcp()->write("FAILED\n\n");
-    } else {
-        selectPattern(pattern);
-    }
+
+    patternManager.selectPattern(pattern);
   } else if (packet->type == PATTERN_BODY) {
     byte pattern = packet->param1;
     uint32_t patternPage = packet->param2;
 
     if (pattern == 0xff) pattern = lastSavedPattern;
 
-    saveLedPatternBody(pattern,patternPage,buf,len);
+    patternManager.saveLedPatternBody(pattern,patternPage,buf,len);
   }
   network.getTcp()->write("ready\n\n");
 }
 
-int frame = 0;
-long lastFrame = 0;
 void patternTick() {
-  if (config.selectedPattern == 0xff) { //no pattern selected, turn LEDs off
-      for (int i=0; i<stripLength; i++) {
-        leds[3*i+1] = 0;
-        leds[3*i+0] = 0;
-        leds[3*i+2] = 0;
-      }
-      return;
-  }
-
-  PatternMetadata * active = &patterns[config.selectedPattern];
-  if (millis() - lastFrame < 1000  / active->fps) return; //wait for a frame based on fps
-  lastFrame = millis();
-  uint32_t width = active->len / (active->frames * 3); //width in pixels of the pattern
-  uint32_t startAddress = active->address + (width * 3 * frame);
-  
-  flash.readBytes(startAddress,(byte*)buf,width*3);
-  
-  for (int i=0; i<stripLength; i++) {
-    //leds[3*i+1] = buf[(3*(i % width))+0]; //we reverse the byte order, strip reads in GRB, stored in RGB
-    //leds[3*i+0] = buf[(3*(i % width))+1];
-    //leds[3*i+2] = buf[(3*(i % width))+2];
-
-    leds[3*i+1] = buf[(3*(i % width))+0] >> 4; //we reverse the byte order, strip reads in GRB, stored in RGB
-    leds[3*i+0] = buf[(3*(i % width))+1] >> 4;
-    leds[3*i+2] = buf[(3*(i % width))+2] >> 4;
-  }
-  frame += 1;
-  if (frame >= active->frames) {
-    frame = 0;
-  }
+  bool hasNewFrame = patternManager.loadNextFrame(leds,stripLength);
+  if (hasNewFrame) strip.sendLeds(leds);
 }
 
 void nextMode() {
-    if (config.selectedPattern == 0xff) {
-        selectPattern(0);
-    } else if(config.selectedPattern+1 >= patternCount) {
-        selectPattern(0xff);
-    } else {
-        selectPattern(config.selectedPattern+1);
-    }
-}
-
-void selectPattern(byte n) {
-    config.selectedPattern = n;
-    if (config.selectedPattern == 0xff) {
-        Serial.println("Mode set to 0xff, LEDs off");
-    } else {
-        PatternMetadata * pat = &patterns[n];
-        Serial.print("Selected pattern: ");
-        Serial.println(pat->name);
-    }
-    saveConfiguration();
-    
-    frame = 0;
-    lastFrame = 0;
+  if (patternManager.getSelectedPattern() == -1) {
+    patternManager.selectPattern(0);
+  } else if(config.selectedPattern+1 >= patternManager.getPatternCount()) {
+    patternManager.selectPattern(-1);
+  } else {
+    patternManager.selectPattern(patternManager.getSelectedPattern()+1);
+  }
 }
 
 void tick() {
@@ -399,7 +238,6 @@ void tick() {
   
   //handleSerial();
   patternTick();
-  strip.sendLeds(leds);
 }
 
 
@@ -462,4 +300,3 @@ void debugHex(char *buf, int len) {
     }
     Serial.println();
 }
-

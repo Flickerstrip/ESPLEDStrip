@@ -1,3 +1,4 @@
+// vim:ts=2 sw=2:
 #ifndef NetworkManager_h
 #define NetworkManager_h
 

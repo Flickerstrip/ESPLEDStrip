@@ -1,3 +1,4 @@
+// vim:ts=2 sw=2:
 #include "NetworkManager.h"
 
 NetworkManager::NetworkManager() {
@@ -55,6 +56,7 @@ bool NetworkManager::isTcpActive() {
 }
 
 void NetworkManager::tcpTick() {
+  if(!tcp.connected()) this->tcpactive = false;
   if(!tcp.available()) return;
 
   if (this->tcpIndex == 0) {
