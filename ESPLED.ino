@@ -250,22 +250,6 @@ void serialLine() {
   }
 }
 
-void loadLedsFromBuffer(char * buf) {
-  uint16_t i = 0;
-  char * nextToken;
-  while(buf != NULL) {
-    nextToken = strstr(buf,",");
-    if (nextToken != NULL) {
-      nextToken[0] = 0;
-      nextToken ++;
-    }
-    
-    leds[i++] = atoi(buf);
-    
-    buf = nextToken;
-  } 
-}
-
 void deletePattern(byte n) {
   patternCount--;
   for (int i=n; i<patternCount; i++) {
