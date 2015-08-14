@@ -9,7 +9,6 @@
 #endif
 
 #include <FlashMemory.h>
-#include <Adafruit_NeoPixel.h>
 
 class PatternManager {
 public:
