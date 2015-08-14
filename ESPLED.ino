@@ -47,6 +47,15 @@ struct PacketStructure {
 
 Configuration config;
 
+/////////////
+int indicatorFrame = 0;
+int indicatorLength = 0;
+byte indicatorColor[] = {50,0,0};
+unsigned long lastFrameTime;
+bool doIndicator = false;
+/////////////
+
+
 void setup() {
   Serial.begin(115200);
   delay(10);
@@ -245,11 +254,61 @@ void nextMode() {
   }
 }
 
+void indicateGreenFast() {
+  doIndicator = true;
+  indicatorColor[0] = 0;
+  indicatorColor[1] = 50;
+  indicatorColor[2] = 0;
+  lastFrameTime = 0;
+  indicatorFrame = 0;
+  indicatorLength = 20;
+}
+
+void indicateBlueSlow() {
+  doIndicator = true;
+  indicatorColor[0] = 0;
+  indicatorColor[1] = 0;
+  indicatorColor[2] = 50;
+  lastFrameTime = 0;
+  indicatorFrame = 0;
+  indicatorLength = 60;
+}
+
+void indicateStop() {
+  doIndicator = false;
+}
+
+void indicatorTick() {
+  if (millis() - lastFrameTime < 1000/30) return;
+  lastFrameTime = millis();
+
+  int halfLength = indicatorLength >> 1;
+  int phase = (indicatorFrame > halfLength) ? (indicatorLength - indicatorFrame) : indicatorFrame;
+  float brightness = (float)phase/(float)halfLength;
+
+  byte r = brightness*(indicatorColor[0]>>1) + (indicatorColor[0]>>1);
+  byte g = brightness*(indicatorColor[1]>>1) + (indicatorColor[1]>>1);
+  byte b = brightness*(indicatorColor[2]>>1) + (indicatorColor[2]>>1);
+  for(int i=0; i<stripLength;i++) {
+    leds[i*3] = g;
+    leds[i*3+1] = r ;
+    leds[i*3+2] =  b;
+  }
+  strip.sendLeds(leds);
+
+  indicatorFrame ++;
+  if (indicatorFrame > indicatorLength) indicatorFrame = 0;
+}
+
 void tick() {
   yield();
   
   //handleSerial();
-  patternTick();
+  if (doIndicator) {
+    indicatorTick();
+  } else {
+    patternTick();
+  }
 }
 
 
@@ -275,10 +334,13 @@ void loop() {
       //Handle configuration AP using a Captive Portal
       Serial.println("Starting captive portal");
       cpc.begin();
+      indicateBlueSlow();
       while(!cpc.hasConfiguration()) {
         cpc.tick();
+        tick();
         delay(1);
       }
+      indicateStop();
 
       cpc.getSSID().toCharArray(config.ssid,50);
       cpc.getPassword().toCharArray(config.password,50);
@@ -298,11 +360,13 @@ void loop() {
       unsigned long start = millis();
       unsigned long timeoutDuration = 15000;
 
+      indicateGreenFast();
       while (WiFi.status() != WL_CONNECTED) {
         if (millis() - start >= timeoutDuration) break;
         delay(1);
         tick();
       }
+      indicateStop();
 
       if (WiFi.status() != WL_CONNECTED) {
         Serial.println("Timed out!");
@@ -321,35 +385,15 @@ void loop() {
         delay(1);
 
         if (disconnect) {
-          Serial.println("Disconnecting from access point");
-          delay(1000);
           WiFi.disconnect();
-          Serial.println("disconnected successfully");
-          Serial.flush();
-          delay(5000);
           config.ssid[0] = 0;
           config.password[0] = 0;
-          Serial.println("set blank successfully");
-          Serial.flush();
           saveConfiguration();
-
-          Serial.println("reset ssid and password: ");
-          Serial.print("ssid: ");
-          Serial.print(strlen(config.ssid));
-          Serial.print(" ");
-          Serial.println(config.ssid);
-          Serial.print("pass: ");
-          Serial.print(strlen(config.password));
-          Serial.print(" ");
-          Serial.println(config.password);
-          Serial.flush();
           break;
         }
       }
       network.stop();
       Serial.println("Disconnected from AP");
-      WiFi.printDiag(Serial);
-      delay(5000);
     }
   }
 }

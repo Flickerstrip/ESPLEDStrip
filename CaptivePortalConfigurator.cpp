@@ -10,11 +10,8 @@ CaptivePortalConfigurator::CaptivePortalConfigurator(const char * ssid) {
 
 void CaptivePortalConfigurator::begin() {
   WiFi.mode(WIFI_AP);
-  delay(10);
   WiFi.softAPConfig(this->apIP, this->apIP, this->netMsk);
-  delay(10);
   WiFi.softAP(this->configssid);
-  delay(10);
 
   Serial.print("SSID: ");
   Serial.println(this->configssid);
@@ -86,16 +83,10 @@ void CaptivePortalConfigurator::urldecode2(char *dst, const char *src) {
 }
 
 String CaptivePortalConfigurator::urlDecode(String s) {
-  Serial.println("in: ");
-  Serial.print(s);
   char src[s.length()*2];
   char dst[s.length()*2];
   s.toCharArray(src,s.length()*2);
-  Serial.println("chararray: ");
-  Serial.print(src);
   urldecode2(dst,src);
-  Serial.println("decoded: ");
-  Serial.print(dst);
   return String(dst);
 }
 
@@ -116,17 +107,15 @@ void CaptivePortalConfigurator::handle_connect() {
       get_password = this->server.arg(i);
     }
   }
-  toSend += "Connecting to SSID " + get_ssid + " with password "+get_password+"\n";
+  toSend += "Connecting...\n";
   this->server.send(200, "text/html", toSend);
-
-  delay(100);
-  this->end();
 
   this->ssid = get_ssid;
   this->password = get_password;
   this->decodeParameters();
   configured = true;
 
+  delay(50);
   this->end();
 }
 
