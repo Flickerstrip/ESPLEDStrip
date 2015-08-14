@@ -4,9 +4,14 @@
 #include <FlashMemory.h>
 #include <ESPWS2812.h>
 #include <EEPROM.h>
+#include <WiFiClient.h>
+#include <ESP8266WebServer.h>
+#include <DNSServer.h>
+#include <Adafruit_NeoPixel.h>
 
 #include "NetworkManager.h"
 #include "PatternManager.h"
+#include "CaptivePortalConfigurator.h"
 
 #include "Arduino.h"
 
@@ -17,17 +22,19 @@
 #define LED_STRIP 13
 
 FlashMemory flash(SPI_SCK,SPI_MOSI,SPI_MISO,MEM_CS);
-ESPWS2812 strip(LED_STRIP,150,true);
+//ESPWS2812 strip(LED_STRIP,150,true);
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(10, LED_STRIP, NEO_GRB + NEO_KHZ800);
 NetworkManager network;
 PatternManager patternManager(&flash);
+CaptivePortalConfigurator cpc("esp8266confignetwork");
 
 uint8_t macAddr[WL_MAC_ADDR_LENGTH];
 uint16_t stripLength = 150;
 uint8_t leds[450];
 int lastSavedPattern = -1;
+bool disconnect = false;
 
 bool debug = true;
-const char* configssid = "esp8266confignetwork";
 struct Configuration {
   char ssid[50];
   char password[50];
@@ -40,41 +47,50 @@ struct PacketStructure {
 	uint32_t param2;
 };
 
-
 Configuration config;
 
 void setup() {
   Serial.begin(115200);
   delay(10);
- 
+
   strip.begin();
+  strip.show();
+  strip.setBrightness(10);
+  strip.setPixelColor(0,255,0,0);
+  strip.show();
+  while(1) {
+    delay(1);
+  }
 
   WiFi.macAddress(macAddr);
   
-  Serial.println("\n");
+  Serial.println("\n\n");
 
-  delay(1000); //TODO figure out why the memory chip needs some time to start up and add it to the library
+  startupPattern();
+  //TODO figure out why the memory chip needs some time to start up and add it to the library
 
   //factoryReset();
 
   loadConfiguration();
-
   patternManager.loadPatterns();
   Serial.print("Loaded patterns: ");
   Serial.println(patternManager.getPatternCount());
   if (patternManager.getPatternCount() != 0) patternManager.selectPattern(0);
+}
 
-  if (debug) Serial.print("Connecting to ");
-  if (debug) Serial.println(config.ssid);
-  
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(config.ssid, config.password);
-  while (WiFi.status() != WL_CONNECTED) {
-    tick();
+void startupPattern() {
+  fillStrip(10,10,25);
+  strip.show();
+  delay(300);
+  fillStrip(25,10,10);
+  strip.show();
+  delay(300);
+}
+
+void fillStrip(byte r, byte g, byte b) {
+  for(int i=0; i<strip.numPixels(); i++) {
+    strip.setPixelColor(i,r,g,b);
   }
-
-  if (debug) Serial.print("Connected with IP:");
-  if (debug) Serial.println(WiFi.localIP());
 }
 
 void factoryReset() {
@@ -166,6 +182,7 @@ const byte DELETE_PATTERN = 4;
 const byte SELECT_PATTERN = 5;
 const byte SAVE_PATTERN = 6;
 const byte PATTERN_BODY = 7;
+const byte DISCONNECT_NETWORK = 8;
 
 void processBuffer(byte * buf, int len) {
   PacketStructure * packet = (PacketStructure*)buf;
@@ -214,13 +231,15 @@ void processBuffer(byte * buf, int len) {
     if (pattern == 0xff) pattern = lastSavedPattern;
 
     patternManager.saveLedPatternBody(pattern,patternPage,buf,len);
+  } else if (packet->type == DISCONNECT_NETWORK) {
+    disconnect = true;
   }
   network.getTcp()->write("ready\n\n");
 }
 
 void patternTick() {
-  bool hasNewFrame = patternManager.loadNextFrame(leds,stripLength);
-  if (hasNewFrame) strip.sendLeds(leds);
+  bool hasNewFrame = patternManager.loadNextFrame(&strip);
+  if (hasNewFrame) strip.show();
 }
 
 void nextMode() {
@@ -256,25 +275,117 @@ void handleUdpPacket(IPAddress ip, byte * buf, int len) {
 
 byte networkBuffer[2000];
 void loop() {
-  network.startUdp();
-
+  bool timedout = false;
   while(true) {
-    tick();
-    network.tick();
-
-    if (network.isUdpActive()) {
-      if (network.udpPacketAvailable()) {
-        IPAddress ip;
-        int readLength = network.getUdpPacket(&ip,(byte*)(&networkBuffer),2000);
-        handleUdpPacket(ip,(byte*)&networkBuffer,readLength);
+    Serial.println("starting loop!");
+    if (timedout || strlen(config.ssid) == 0) {
+      //Handle configuration AP using a Captive Portal
+      Serial.println("Starting captive portal");
+      cpc.begin();
+      while(!cpc.hasConfiguration()) {
+        cpc.tick();
+        delay(1);
       }
+
+      cpc.getSSID().toCharArray(config.ssid,50);
+      cpc.getPassword().toCharArray(config.password,50);
+
+      saveConfiguration();
+      timedout = false;
+
+      Serial.print("Configured via captive portal: ");
+      Serial.println(cpc.getSSID());
+    } else {
+      if (debug) Serial.print("Connecting to ");
+      if (debug) Serial.println(config.ssid);
+
+      WiFi.mode(WIFI_STA);
+      WiFi.begin(config.ssid, config.password);
+
+      unsigned long start = millis();
+      unsigned long timeoutDuration = 15000;
+
+      while (WiFi.status() != WL_CONNECTED) {
+        if (millis() - start >= timeoutDuration) break;
+        delay(1);
+        tick();
+      }
+
+      if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("Timed out!");
+        timedout = true;
+        continue;
+      }
+
+      timedout = false;
+
+      if (debug) Serial.print("Connected with IP:");
+      if (debug) Serial.println(WiFi.localIP());
+
+      disconnect = false;
+      while(WiFi.status() == WL_CONNECTED) {
+        handleConnectedState();
+        delay(1);
+
+        if (disconnect) {
+          Serial.println("Disconnecting from access point");
+          delay(1000);
+          WiFi.disconnect();
+          Serial.println("disconnected successfully");
+          Serial.flush();
+          delay(5000);
+          config.ssid[0] = 0;
+          config.password[0] = 0;
+          Serial.println("set blank successfully");
+          Serial.flush();
+          saveConfiguration();
+
+          Serial.println("reset ssid and password: ");
+          Serial.print("ssid: ");
+          Serial.print(strlen(config.ssid));
+          Serial.print(" ");
+          Serial.println(config.ssid);
+          Serial.print("pass: ");
+          Serial.print(strlen(config.password));
+          Serial.print(" ");
+          Serial.println(config.password);
+          Serial.flush();
+          break;
+        }
+      }
+      network.stop();
+      Serial.println("Disconnected from AP");
+      WiFi.printDiag(Serial);
+      delay(5000);
     }
+  }
+}
 
-    if (network.isTcpActive()) {
-      if (network.tcpPacketAvailable()) {
-        int readLength = network.getTcpPacket((byte*)&networkBuffer,2000);
-        processBuffer((byte*)&networkBuffer,readLength);
-      }
+void handleConnectedState() {
+  if (!network.isUdpActive()) {
+    network.startUdp();
+  }
+
+  tick();
+
+  bool tcpActive = network.isTcpActive();
+  network.tick();
+  if (tcpActive && !network.isTcpActive()) {
+    Serial.println("TCP Disconnected");
+  }
+
+  if (network.isUdpActive()) {
+    if (network.udpPacketAvailable()) {
+      IPAddress ip;
+      int readLength = network.getUdpPacket(&ip,(byte*)(&networkBuffer),2000);
+      handleUdpPacket(ip,(byte*)&networkBuffer,readLength);
+    }
+  }
+
+  if (network.isTcpActive()) {
+    if (network.tcpPacketAvailable()) {
+      int readLength = network.getTcpPacket((byte*)&networkBuffer,2000);
+      processBuffer((byte*)&networkBuffer,readLength);
     }
   }
 }

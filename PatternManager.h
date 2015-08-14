@@ -9,6 +9,7 @@
 #endif
 
 #include <FlashMemory.h>
+#include <Adafruit_NeoPixel.h>
 
 class PatternManager {
 public:
@@ -36,7 +37,7 @@ public:
   int getSelectedPattern();
   PatternMetadata * getActivePattern();
 
-  bool loadNextFrame(byte * ledBuffer, int ledCount);
+  bool loadNextFrame(Adafruit_NeoPixel * strip);
   int serializePatterns(byte * buf, int len);
 
 private:

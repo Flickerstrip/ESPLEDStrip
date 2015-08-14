@@ -44,7 +44,7 @@ int NetworkManager::getUdpPacket(IPAddress * remoteIp, byte * buf, int len) {
 void NetworkManager::startTcp(IPAddress * ip, int port) {
   Serial.print("Starting TCP connection: ");
   Serial.print(*ip);
-  Serial.print(" : ");
+  Serial.print(":");
   Serial.println(port);
   tcp.connect(*ip,port);
 
@@ -56,7 +56,10 @@ bool NetworkManager::isTcpActive() {
 }
 
 void NetworkManager::tcpTick() {
-  if(!tcp.connected()) this->tcpactive = false;
+  if(!tcp.connected()) {
+    this->tcpactive = false;
+    return;
+  }
   if(!tcp.available()) return;
 
   if (this->tcpIndex == 0) {
@@ -65,8 +68,8 @@ void NetworkManager::tcpTick() {
     this->expectingBytes | (tcp.read() << 16);
     this->expectingBytes | (tcp.read() << 24);
 
-    Serial.print("Expecting bytes: ");
-    Serial.println(this->expectingBytes);
+    //Serial.print("Expecting bytes: ");
+    //Serial.println(this->expectingBytes);
 
     while(!tcp.available()) delay(0);
   }
@@ -91,7 +94,10 @@ bool NetworkManager::tcpPacketAvailable() {
 }
 
 int NetworkManager::getTcpPacket(byte * buf, int len) {
-  memcpy(buf,this->tcpBuffer,min(this->expectingBytes,len));
+  int copyLength = len;
+  if (this->expectingBytes < copyLength) copyLength = this->expectingBytes;
+
+  memcpy(buf,this->tcpBuffer,copyLength);
 
   this->tcpIndex = 0;
   this->tcpAvailable = false;
@@ -101,4 +107,11 @@ int NetworkManager::getTcpPacket(byte * buf, int len) {
 
 WiFiClient * NetworkManager::getTcp() {
   return &tcp;
+}
+
+void NetworkManager::stop() {
+  this->tcp.stop();
+  this->udp.stop();
+  this->tcpactive = false;
+  this->udpactive = false;
 }

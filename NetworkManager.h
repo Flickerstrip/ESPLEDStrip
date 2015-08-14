@@ -28,6 +28,8 @@ public:
   int getTcpPacket(byte * buf, int len);
   WiFiClient * getTcp();
 
+  void stop();
+
 private:
   WiFiUDP udp;
   WiFiClient tcp;
