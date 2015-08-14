@@ -7,7 +7,6 @@
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
 #include <DNSServer.h>
-#include <Adafruit_NeoPixel.h>
 
 #include "NetworkManager.h"
 #include "PatternManager.h"
@@ -22,8 +21,7 @@
 #define LED_STRIP 13
 
 FlashMemory flash(SPI_SCK,SPI_MOSI,SPI_MISO,MEM_CS);
-//ESPWS2812 strip(LED_STRIP,150,true);
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(10, LED_STRIP, NEO_GRB + NEO_KHZ800);
+ESPWS2812 strip(LED_STRIP,150,true);
 NetworkManager network;
 PatternManager patternManager(&flash);
 CaptivePortalConfigurator cpc("esp8266confignetwork");
@@ -54,13 +52,6 @@ void setup() {
   delay(10);
 
   strip.begin();
-  strip.show();
-  strip.setBrightness(10);
-  strip.setPixelColor(0,255,0,0);
-  strip.show();
-  while(1) {
-    delay(1);
-  }
 
   WiFi.macAddress(macAddr);
   
@@ -80,16 +71,18 @@ void setup() {
 
 void startupPattern() {
   fillStrip(10,10,25);
-  strip.show();
+  strip.sendLeds(leds);
   delay(300);
   fillStrip(25,10,10);
-  strip.show();
+  strip.sendLeds(leds);
   delay(300);
 }
 
 void fillStrip(byte r, byte g, byte b) {
-  for(int i=0; i<strip.numPixels(); i++) {
-    strip.setPixelColor(i,r,g,b);
+  for (int i=0; i<stripLength; i++) {
+    leds[i*3] = g;
+    leds[i*3+1] = r;
+    leds[i*3+2] = b;
   }
 }
 
@@ -238,8 +231,8 @@ void processBuffer(byte * buf, int len) {
 }
 
 void patternTick() {
-  bool hasNewFrame = patternManager.loadNextFrame(&strip);
-  if (hasNewFrame) strip.show();
+  bool hasNewFrame = patternManager.loadNextFrame(leds,stripLength);
+  if (hasNewFrame) strip.sendLeds(leds);
 }
 
 void nextMode() {

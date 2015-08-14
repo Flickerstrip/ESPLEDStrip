@@ -37,7 +37,7 @@ public:
   int getSelectedPattern();
   PatternMetadata * getActivePattern();
 
-  bool loadNextFrame(Adafruit_NeoPixel * strip);
+  bool loadNextFrame(byte * ledBuffer, int ledCount);
   int serializePatterns(byte * buf, int len);
 
 private:
