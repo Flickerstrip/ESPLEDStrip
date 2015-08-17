@@ -8,7 +8,7 @@ PatternManager::PatternManager(FlashMemory * mem) {
 }
 
 void PatternManager::loadPatterns() {
-  this->flash->readBytes(0x100,(byte *)this->patterns,sizeof(PatternMetadata)*MAX_PATTERNS);
+  this->flash->readBytes(0x100,(byte *)this->patterns,sizeof(PatternMetadata)*PatternManager::MAX_PATTERNS);
   PatternMetadata * ptr = this->patterns;
   for (int i=0; i<MAX_PATTERNS; i++) {
     if (ptr->address == 0xffffffff) {
@@ -17,7 +17,7 @@ void PatternManager::loadPatterns() {
     }
     ptr++;
   }
-  this->patternCount = this->MAX_PATTERNS;
+  this->patternCount = PatternManager::MAX_PATTERNS;
 }
 
 void PatternManager::resetPatternsToDefault() {
@@ -125,6 +125,25 @@ void PatternManager::saveLedPatternBody(int pattern, uint32_t patternStartPage, 
   this->flash->writeBytes(writeLocation,payload,len);
 }
 
+int PatternManager::getTotalBlocks() {
+  return PatternManager::NUM_PAGES;
+}
+
+int PatternManager::getUsedBlocks() {
+  int blocksUsed = 0;
+  for (int i=0; i<this->patternCount;i++) {
+    uint32_t usedPages = this->patterns[i].len / 0x100;
+    if (this->patterns[i].len % 0x100 != 0) usedPages++;
+
+    blocksUsed += usedPages;
+  }
+
+  return blocksUsed;
+}
+
+int PatternManager::getAvailableBlocks() {
+  return getTotalBlocks() - getUsedBlocks();
+}
 
 int PatternManager::getPatternCount() {
   return this->patternCount;

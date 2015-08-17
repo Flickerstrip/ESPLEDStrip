@@ -185,6 +185,20 @@ const byte SELECT_PATTERN = 5;
 const byte SAVE_PATTERN = 6;
 const byte PATTERN_BODY = 7;
 const byte DISCONNECT_NETWORK = 8;
+const byte AVAILABLE_BLOCKS = 9;
+
+unsigned long lastStart;
+void start() {
+  lastStart = millis();
+}
+
+void stop(String s) {
+  Serial.print(s);
+  Serial.print(": ");
+  Serial.print(millis()-lastStart);
+  Serial.print("ms");
+  Serial.println();
+}
 
 void processBuffer(byte * buf, int len) {
   PacketStructure * packet = (PacketStructure*)buf;
@@ -201,14 +215,14 @@ void processBuffer(byte * buf, int len) {
     byte pattern = packet->param1;
     patternManager.selectPattern(pattern);
   } else if (packet->type == GET_PATTERNS) {
+    start();
     //TODO change this to binary?
     byte patternBuffer[1000];
     int size = patternManager.serializePatterns(patternBuffer,len);
 
     network.getTcp()->write("patterns\n");
-    for (int i=0; i<size; i++) {
-      network.getTcp()->write(patternBuffer[i]);
-    }
+    network.getTcp()->write((uint8_t *)patternBuffer,(size_t)size);
+
     network.getTcp()->write("\n"); //already have one at end of line
   } else if (packet->type == SAVE_PATTERN) {
     byte * start = buf;
@@ -235,6 +249,10 @@ void processBuffer(byte * buf, int len) {
     patternManager.saveLedPatternBody(pattern,patternPage,buf,len);
   } else if (packet->type == DISCONNECT_NETWORK) {
     disconnect = true;
+  } else if (packet->type == AVAILABLE_BLOCKS) {
+    char strbuf[30];
+    int size = snprintf(strbuf,30,"available,%d,%d\n",patternManager.getUsedBlocks(),patternManager.getTotalBlocks());
+    network.getTcp()->write((uint8_t*)&strbuf,(size_t)size);
   }
   network.getTcp()->write("ready\n\n");
 }
@@ -329,10 +347,8 @@ byte networkBuffer[2000];
 void loop() {
   bool timedout = false;
   while(true) {
-    Serial.println("starting loop!");
     if (timedout || strlen(config.ssid) == 0) {
       //Handle configuration AP using a Captive Portal
-      Serial.println("Starting captive portal");
       cpc.begin();
       indicateBlueSlow();
       while(!cpc.hasConfiguration()) {

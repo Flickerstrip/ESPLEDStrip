@@ -32,6 +32,10 @@ public:
   byte saveLedPatternMetadata(PatternMetadata * pat);
   void saveLedPatternBody(int pattern, uint32_t patternStartPage, byte * payload, uint32_t len);
 
+  int getTotalBlocks();
+  int getUsedBlocks();
+  int getAvailableBlocks();
+
   int getPatternCount();
   int getSelectedPattern();
   PatternMetadata * getActivePattern();
@@ -40,6 +44,7 @@ public:
   int serializePatterns(byte * buf, int len);
 
 private:
+  const static int NUM_PAGES = 4096;
   const static int MAX_PATTERNS = 17;
 
   FlashMemory * flash;
