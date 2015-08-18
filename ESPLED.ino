@@ -66,8 +66,19 @@ void setup() {
   
   Serial.println("\n\n");
 
+  /*
+  while(1) {
+    delay(4000);
+    for (int i=0; i<20; i++) {
+      int a = analogRead(A0);
+      Serial.println(a);
+      delay(1);
+    }
+    Serial.println("Done\n");
+  }
+  */
+
   startupPattern();
-  //TODO figure out why the memory chip needs some time to start up and add it to the library
 
   //factoryReset();
 
@@ -251,7 +262,7 @@ void processBuffer(byte * buf, int len) {
     disconnect = true;
   } else if (packet->type == AVAILABLE_BLOCKS) {
     char strbuf[30];
-    int size = snprintf(strbuf,30,"available,%d,%d\n",patternManager.getUsedBlocks(),patternManager.getTotalBlocks());
+    int size = snprintf(strbuf,30,"available,%d,%d\n\n",patternManager.getUsedBlocks(),patternManager.getTotalBlocks());
     network.getTcp()->write((uint8_t*)&strbuf,(size_t)size);
   }
   network.getTcp()->write("ready\n\n");
@@ -307,11 +318,7 @@ void indicatorTick() {
   byte r = brightness*(indicatorColor[0]>>1) + (indicatorColor[0]>>1);
   byte g = brightness*(indicatorColor[1]>>1) + (indicatorColor[1]>>1);
   byte b = brightness*(indicatorColor[2]>>1) + (indicatorColor[2]>>1);
-  for(int i=0; i<stripLength;i++) {
-    leds[i*3] = g;
-    leds[i*3+1] = r ;
-    leds[i*3+2] =  b;
-  }
+  fillStrip(r,g,b);
   strip.sendLeds(leds);
 
   indicatorFrame ++;
