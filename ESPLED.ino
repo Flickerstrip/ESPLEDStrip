@@ -37,6 +37,7 @@ struct Configuration {
   char ssid[50];
   char password[50];
   byte selectedPattern;
+  byte brightness;
 };
 
 struct PacketStructure {
@@ -86,7 +87,7 @@ void setup() {
   patternManager.loadPatterns();
   Serial.print("Loaded patterns: ");
   Serial.println(patternManager.getPatternCount());
-  if (patternManager.getPatternCount() != 0) patternManager.selectPattern(0);
+  patternManager.selectPattern(config.selectedPattern);
 }
 
 void startupPattern() {
@@ -130,6 +131,8 @@ void loadConfiguration() {
   //make these valid strings of length 0
   if (config.ssid[0] == 255) config.ssid[0] = 0;
   if (config.password[0] == 255) config.password[0] = 0;
+  //if (config.selectedPattern == 255) config.selectedPattern = 0;
+  //if (config.brightness == 255) config.brightness = 10;
 }
 
 void saveConfiguration() {
@@ -197,6 +200,8 @@ const byte SAVE_PATTERN = 6;
 const byte PATTERN_BODY = 7;
 const byte DISCONNECT_NETWORK = 8;
 const byte AVAILABLE_BLOCKS = 9;
+const byte SET_BRIGHTNESS = 10;
+const byte GET_BRIGHTNESS = 11;
 
 unsigned long lastStart;
 void start() {
@@ -211,7 +216,15 @@ void stop(String s) {
   Serial.println();
 }
 
+void selectPattern(byte pattern) {
+    patternManager.selectPattern(pattern);
+    config.selectedPattern = patternManager.getSelectedPattern();
+    saveConfiguration();
+}
+
 void processBuffer(byte * buf, int len) {
+  //if (buf[0] != PING) debugHex((char*)buf,len > 20 ? 20 : len);
+
   PacketStructure * packet = (PacketStructure*)buf;
   buf = buf + sizeof(PacketStructure);
   len = len - sizeof(PacketStructure);
@@ -224,7 +237,7 @@ void processBuffer(byte * buf, int len) {
     patternManager.clearPatterns();
   } else if (packet->type == SELECT_PATTERN) {
     byte pattern = packet->param1;
-    patternManager.selectPattern(pattern);
+    selectPattern(pattern);
   } else if (packet->type == GET_PATTERNS) {
     start();
     //TODO change this to binary?
@@ -250,7 +263,7 @@ void processBuffer(byte * buf, int len) {
       patternManager.saveLedPatternBody(pattern,0,(byte*)start,remaining);
     }
 
-    patternManager.selectPattern(pattern);
+    selectPattern(pattern);
   } else if (packet->type == PATTERN_BODY) {
     byte pattern = packet->param1;
     uint32_t patternPage = packet->param2;
@@ -264,22 +277,35 @@ void processBuffer(byte * buf, int len) {
     char strbuf[30];
     int size = snprintf(strbuf,30,"available,%d,%d\n\n",patternManager.getUsedBlocks(),patternManager.getTotalBlocks());
     network.getTcp()->write((uint8_t*)&strbuf,(size_t)size);
+  } else if (packet->type == SET_BRIGHTNESS) {
+    config.brightness = packet->param1;
+    Serial.print("Set brightness to: ");
+    Serial.println(config.brightness);
+    saveConfiguration();
+    network.getTcp()->write("brightness:");
+    network.getTcp()->write(config.brightness);
+    network.getTcp()->write("\n\n"); //already have one at end of line
+  } else if (packet->type == GET_BRIGHTNESS) {
+    char strbuf[30];
+    int size = snprintf(strbuf,30,"brightness:%d\n\n",config.brightness);
+    network.getTcp()->write((uint8_t*)&strbuf,(size_t)size);
   }
   network.getTcp()->write("ready\n\n");
 }
 
 void patternTick() {
-  bool hasNewFrame = patternManager.loadNextFrame(leds,stripLength);
+  byte brightness = (255*config.brightness)/100;
+  bool hasNewFrame = patternManager.loadNextFrame(leds,stripLength,brightness);
   if (hasNewFrame) strip.sendLeds(leds);
 }
 
 void nextMode() {
   if (patternManager.getSelectedPattern() == -1) {
-    patternManager.selectPattern(0);
+    selectPattern(0);
   } else if(config.selectedPattern+1 >= patternManager.getPatternCount()) {
-    patternManager.selectPattern(-1);
+    selectPattern(-1);
   } else {
-    patternManager.selectPattern(patternManager.getSelectedPattern()+1);
+    selectPattern(patternManager.getSelectedPattern()+1);
   }
 }
 

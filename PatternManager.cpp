@@ -73,15 +73,17 @@ void PatternManager::deletePattern(byte n) {
   for (int i=n; i<this->patternCount; i++) {
     memcpy(&this->patterns[i],&this->patterns[i+1],sizeof(PatternMetadata));
   }
-  if (n <= this->selectedPattern) {
-    selectPattern(this->selectedPattern-1);
-  }
 
   byte * ptr = (byte*)(&this->patterns[this->patternCount]);
   for (int i=0; i<sizeof(PatternMetadata); i++) {
     ptr[i] = 0xff;
   }
   this->flash->writeBytes(0x100+sizeof(PatternMetadata)*n,(byte *)(&this->patterns[n]),(this->patternCount-n+1)*sizeof(PatternMetadata));
+
+  if (n <= this->selectedPattern) {
+    selectPattern(this->selectedPattern-1);
+  }
+
 }
 
 uint32_t PatternManager::findInsertLocation(uint32_t len) {
@@ -157,7 +159,7 @@ PatternManager::PatternMetadata * PatternManager::getActivePattern() {
   return &this->patterns[this->getSelectedPattern()];
 }
 
-bool PatternManager::loadNextFrame(byte * ledBuffer, int ledCount) {
+bool PatternManager::loadNextFrame(byte * ledBuffer, int ledCount, byte brightness) {
   if (this->getSelectedPattern() == -1) { //no pattern selected, turn LEDs off
     if (this->lastFrameTime != 0) return false;
     this->lastFrameTime = millis();
@@ -179,9 +181,9 @@ bool PatternManager::loadNextFrame(byte * ledBuffer, int ledCount) {
   this->flash->readBytes(startAddress,(byte*)buf,width*3);
   
   for (int i=0; i<ledCount; i++) {
-    ledBuffer[3*i+1] = buf[(3*(i % width))+0] >> 4; //we reverse the byte order, strip reads in GRB, stored in RGB
-    ledBuffer[3*i+0] = buf[(3*(i % width))+1] >> 4;
-    ledBuffer[3*i+2] = buf[(3*(i % width))+2] >> 4;
+    ledBuffer[3*i+1] = brightness * (buf[(3*(i % width))+0]) >> 8; //we reverse the byte order, strip reads in GRB, stored in RGB
+    ledBuffer[3*i+0] = brightness * (buf[(3*(i % width))+1]) >> 8;
+    ledBuffer[3*i+2] = brightness * (buf[(3*(i % width))+2]) >> 8;
   }
   this->currentFrame += 1;
   if (this->currentFrame >= active->frames) {

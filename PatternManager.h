@@ -40,7 +40,7 @@ public:
   int getSelectedPattern();
   PatternMetadata * getActivePattern();
 
-  bool loadNextFrame(byte * ledBuffer, int ledCount);
+  bool loadNextFrame(byte * ledBuffer, int ledCount, byte brightness);
   int serializePatterns(byte * buf, int len);
 
 private:
