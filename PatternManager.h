@@ -41,7 +41,7 @@ public:
   PatternMetadata * getActivePattern();
 
   bool loadNextFrame(byte * ledBuffer, int ledCount, byte brightness);
-  int serializePatterns(byte * buf, int len);
+  int serializePatterns(char * buf, int len);
 
 private:
   const static int NUM_PAGES = 4096;

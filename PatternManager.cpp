@@ -193,16 +193,54 @@ bool PatternManager::loadNextFrame(byte * ledBuffer, int ledCount, byte brightne
   return true;
 }
 
-int PatternManager::serializePatterns(byte * buf, int len) {
-  PatternManager::PatternMetadata * pat;
-  int index = 0;
-  char * wh = (char *)buf;
-  for (int i=0; i<this->getPatternCount(); i++) {
-    pat = &this->patterns[i];
-    int n = sprintf(wh,"%d,%s,%d,%d,%d,%d,%d\n",i,pat->name,pat->address,pat->len,pat->frames,pat->flags,pat->fps);
-    index += n;
-    wh += n;
+/*
+{
+  'patterns':[
+    {
+      'index':index,
+      'name':'Strip name',
+      'address':addy,
+      'length':len,
+      'frame':frames,
+      'flags':flags,
+      'fps':fps
+    }
+  ],
+  'selectedPattern':5,
+  'brightness':50,
+  'memory':{
+    'used':100,
+    'free':100,
+    'total':100
   }
-  return index;
+}
+*/
+int PatternManager::serializePatterns(char * buf, int bufferSize) {
+  PatternManager::PatternMetadata * pat;
+  char * ptr = buf;
+  int size;
+
+  size = snprintf(ptr,bufferSize,"[");
+  ptr += size;
+  bufferSize -= size;
+
+  for (int i=0; i<this->getPatternCount(); i++) {
+    if (i != 0) {
+      size = snprintf(ptr,bufferSize,",");
+      ptr += size;
+      bufferSize -= size;
+    }
+    pat = &this->patterns[i];
+
+    size = snprintf(ptr,bufferSize,"{\"index\":%d,\"name\":\"%s\",\"address\":%d,\"length\":%d,\"frames\":%d,\"flags\":%d,\"fps\":%d}",i,pat->name,pat->address,pat->len,pat->frames,pat->flags,pat->fps);
+    ptr += size;
+    bufferSize -= size;
+  }
+
+  size = snprintf(ptr,bufferSize,"]");
+  ptr += size;
+  bufferSize -= size;
+
+  return ptr - buf;
 }
 

@@ -192,16 +192,14 @@ void serialLine() {
 
 const byte UNUSED = 0;
 const byte PING = 1;
-const byte GET_PATTERNS = 2;
+const byte GET_STATUS = 2;
 const byte CLEAR_PATTERNS = 3;
 const byte DELETE_PATTERN = 4;
 const byte SELECT_PATTERN = 5;
 const byte SAVE_PATTERN = 6;
 const byte PATTERN_BODY = 7;
 const byte DISCONNECT_NETWORK = 8;
-const byte AVAILABLE_BLOCKS = 9;
-const byte SET_BRIGHTNESS = 10;
-const byte GET_BRIGHTNESS = 11;
+const byte SET_BRIGHTNESS = 9;
 
 unsigned long lastStart;
 void start() {
@@ -238,16 +236,8 @@ void processBuffer(byte * buf, int len) {
   } else if (packet->type == SELECT_PATTERN) {
     byte pattern = packet->param1;
     selectPattern(pattern);
-  } else if (packet->type == GET_PATTERNS) {
-    start();
-    //TODO change this to binary?
-    byte patternBuffer[1000];
-    int size = patternManager.serializePatterns(patternBuffer,len);
-
-    network.getTcp()->write("patterns\n");
-    network.getTcp()->write((uint8_t *)patternBuffer,(size_t)size);
-
-    network.getTcp()->write("\n"); //already have one at end of line
+  } else if (packet->type == GET_STATUS) {
+    sendStatus();
   } else if (packet->type == SAVE_PATTERN) {
     byte * start = buf;
     //BE AWARE: word alignment seems to matter.. we're copying this to a different location to avoid pointer alignment issues
@@ -273,24 +263,60 @@ void processBuffer(byte * buf, int len) {
     patternManager.saveLedPatternBody(pattern,patternPage,buf,len);
   } else if (packet->type == DISCONNECT_NETWORK) {
     disconnect = true;
-  } else if (packet->type == AVAILABLE_BLOCKS) {
-    char strbuf[30];
-    int size = snprintf(strbuf,30,"available,%d,%d\n\n",patternManager.getUsedBlocks(),patternManager.getTotalBlocks());
-    network.getTcp()->write((uint8_t*)&strbuf,(size_t)size);
   } else if (packet->type == SET_BRIGHTNESS) {
     config.brightness = packet->param1;
     Serial.print("Set brightness to: ");
     Serial.println(config.brightness);
     saveConfiguration();
-    network.getTcp()->write("brightness:");
-    network.getTcp()->write(config.brightness);
-    network.getTcp()->write("\n\n"); //already have one at end of line
-  } else if (packet->type == GET_BRIGHTNESS) {
-    char strbuf[30];
-    int size = snprintf(strbuf,30,"brightness:%d\n\n",config.brightness);
-    network.getTcp()->write((uint8_t*)&strbuf,(size_t)size);
+    sendStatus();
   }
   network.getTcp()->write("ready\n\n");
+}
+
+/*
+pat->name,pat->address,pat->len,pat->frames,pat->flags,pat->fps
+{
+  'patterns':[
+    {
+      'name':'Strip name',
+      'address':addy,
+      'length':len,
+      'frame':frames,
+      'flags':flags,
+      'fps':fps
+    }
+  ],
+  'selectedPattern':5,
+  'brightness':50,
+  'memory':{
+    'used':100,
+    'free':100,
+    'total':100
+  }
+}
+
+*/
+
+void sendStatus() {
+  int bufferSize = 1000;
+  byte jsonBuffer[bufferSize];
+  char * ptr = (char*)jsonBuffer;
+  int size;
+
+  size = snprintf(ptr,bufferSize,"{\"selectedPattern\":%d,\"brightness\":%d,\"memory\":{\"used\":%d,\"free\":%d,\"total\":%d},\"patterns\":",patternManager.getSelectedPattern(),config.brightness,patternManager.getUsedBlocks(),patternManager.getAvailableBlocks(),patternManager.getTotalBlocks());
+  bufferSize -= size;
+  ptr += size;
+
+  size = patternManager.serializePatterns(ptr,bufferSize);
+  bufferSize -= size;
+  ptr += size;
+
+  size = snprintf(ptr,bufferSize,"}");
+  bufferSize -= size;
+  ptr += size;
+
+  network.getTcp()->write((uint8_t *)jsonBuffer,(size_t)((int)ptr-(int)jsonBuffer));
+  network.getTcp()->write("\n\n"); //already have one at end of line
 }
 
 void patternTick() {
