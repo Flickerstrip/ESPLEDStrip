@@ -38,7 +38,10 @@ struct Configuration {
   char password[50];
   byte selectedPattern;
   byte brightness;
+  byte flags;
 };
+
+const byte FLAG_POWER = 7;
 
 struct PacketStructure {
 	uint32_t type;
@@ -131,7 +134,7 @@ void loadConfiguration() {
   //make these valid strings of length 0
   if (config.ssid[0] == 255) config.ssid[0] = 0;
   if (config.password[0] == 255) config.password[0] = 0;
-  //if (config.selectedPattern == 255) config.selectedPattern = 0;
+  if (config.selectedPattern == 255) config.selectedPattern = 0;
   //if (config.brightness == 255) config.brightness = 10;
 }
 
@@ -200,6 +203,7 @@ const byte SAVE_PATTERN = 6;
 const byte PATTERN_BODY = 7;
 const byte DISCONNECT_NETWORK = 8;
 const byte SET_BRIGHTNESS = 9;
+const byte TOGGLE_POWER = 10;
 
 unsigned long lastStart;
 void start() {
@@ -215,9 +219,9 @@ void stop(String s) {
 }
 
 void selectPattern(byte pattern) {
-    patternManager.selectPattern(pattern);
-    config.selectedPattern = patternManager.getSelectedPattern();
-    saveConfiguration();
+  patternManager.selectPattern(pattern);
+  config.selectedPattern = patternManager.getSelectedPattern();
+  saveConfiguration();
 }
 
 void processBuffer(byte * buf, int len) {
@@ -269,29 +273,36 @@ void processBuffer(byte * buf, int len) {
     Serial.println(config.brightness);
     saveConfiguration();
     sendStatus();
+  } else if (packet->type == TOGGLE_POWER) {
+    Serial.print("toggle power: ");
+    Serial.println(packet->param1);
+    if (packet->param1 == 0) toggleStrip(false);
+    if (packet->param1 == 1) toggleStrip(true);
+    if (packet->param1 == 2) toggleStrip(!isPowerOn());
   }
-  network.getTcp()->write("ready\n\n");
+  network.getTcp()->write("{\"type\":\"ready\"}\n\n");
 }
 
 /*
 pat->name,pat->address,pat->len,pat->frames,pat->flags,pat->fps
 {
-  'patterns':[
+  "type":"status",
+  "patterns":[
     {
-      'name':'Strip name',
-      'address':addy,
-      'length':len,
-      'frame':frames,
-      'flags':flags,
-      'fps':fps
+      "name":"Strip name",
+      "address":addy,
+      "length":len,
+      "frame":frames,
+      "flags":flags,
+      "fps":fps
     }
   ],
-  'selectedPattern':5,
-  'brightness':50,
-  'memory':{
-    'used':100,
-    'free':100,
-    'total':100
+  "selectedPattern":5,
+  "brightness":50,
+  "memory":{
+    "used":100,
+    "free":100,
+    "total":100
   }
 }
 
@@ -303,7 +314,7 @@ void sendStatus() {
   char * ptr = (char*)jsonBuffer;
   int size;
 
-  size = snprintf(ptr,bufferSize,"{\"selectedPattern\":%d,\"brightness\":%d,\"memory\":{\"used\":%d,\"free\":%d,\"total\":%d},\"patterns\":",patternManager.getSelectedPattern(),config.brightness,patternManager.getUsedBlocks(),patternManager.getAvailableBlocks(),patternManager.getTotalBlocks());
+  size = snprintf(ptr,bufferSize,"{\"type\":\"status\",\"power\":%d,\"selectedPattern\":%d,\"brightness\":%d,\"memory\":{\"used\":%d,\"free\":%d,\"total\":%d},\"patterns\":",isPowerOn(),patternManager.getSelectedPattern(),config.brightness,patternManager.getUsedBlocks(),patternManager.getAvailableBlocks(),patternManager.getTotalBlocks());
   bufferSize -= size;
   ptr += size;
 
@@ -326,13 +337,27 @@ void patternTick() {
 }
 
 void nextMode() {
-  if (patternManager.getSelectedPattern() == -1) {
-    selectPattern(0);
+  if (!isPowerOn()) {
+    toggleStrip(true);
   } else if(config.selectedPattern+1 >= patternManager.getPatternCount()) {
-    selectPattern(-1);
+    selectPattern(0);
+    toggleStrip(false);
   } else {
     selectPattern(patternManager.getSelectedPattern()+1);
   }
+}
+
+bool isPowerOn() {
+  return (config.flags >> FLAG_POWER) & 1 == 1;
+}
+
+void toggleStrip(bool on) {
+  if (on) {
+    config.flags |= (1 << FLAG_POWER);
+  } else {
+    config.flags &= ~(1 << FLAG_POWER);
+  }
+  saveConfiguration();
 }
 
 void indicateGreenFast() {
@@ -383,8 +408,11 @@ void tick() {
   //handleSerial();
   if (doIndicator) {
     indicatorTick();
-  } else {
+  } else if (isPowerOn()) {
     patternTick();
+  } else {
+    fillStrip(0,0,0);
+    strip.sendLeds(leds);
   }
 }
 

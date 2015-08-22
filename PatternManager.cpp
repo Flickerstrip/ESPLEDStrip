@@ -55,14 +55,13 @@ void PatternManager::clearPatterns() {
 }
 
 void PatternManager::selectPattern(byte n) {
+    if (n >= this->patternCount) return;
+
     this->selectedPattern = n;
-    if (this->selectedPattern == 0xff) {
-        Serial.println("Mode set to 0xff, LEDs off");
-    } else {
-        PatternMetadata * pat = &this->patterns[n];
-        Serial.print("Selected pattern: ");
-        Serial.println(pat->name);
-    }
+
+    PatternMetadata * pat = &this->patterns[n];
+    Serial.print("Selected pattern: ");
+    Serial.println(pat->name);
     
     this->currentFrame = 0;
     this->lastFrameTime = 0;
@@ -160,17 +159,6 @@ PatternManager::PatternMetadata * PatternManager::getActivePattern() {
 }
 
 bool PatternManager::loadNextFrame(byte * ledBuffer, int ledCount, byte brightness) {
-  if (this->getSelectedPattern() == -1) { //no pattern selected, turn LEDs off
-    if (this->lastFrameTime != 0) return false;
-    this->lastFrameTime = millis();
-
-    for (int i=0; i<ledCount; i++) {
-      ledBuffer[3*i+1] = 0;
-      ledBuffer[3*i+0] = 0;
-      ledBuffer[3*i+2] = 0;
-    }
-  }
-
   PatternMetadata * active = this->getActivePattern();
   if (millis() - this->lastFrameTime < 1000  / active->fps) return false; //wait for a frame based on fps
   this->lastFrameTime = millis();
