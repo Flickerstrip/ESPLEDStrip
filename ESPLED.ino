@@ -396,7 +396,7 @@ void sendStatus() {
   char * ptr = (char*)jsonBuffer;
   int size;
 
-  size = snprintf(ptr,bufferSize,"{\"type\":\"status\",\"power\":%d,\"selectedPattern\":%d,\"brightness\":%d,\"memory\":{\"used\":%d,\"free\":%d,\"total\":%d},\"patterns\":",isPowerOn(),patternManager.getSelectedPattern(),config.brightness,patternManager.getUsedBlocks(),patternManager.getAvailableBlocks(),patternManager.getTotalBlocks());
+  size = snprintf(ptr,bufferSize,"{\"type\":\"status\",\"firmware\":\"%s\",\"power\":%d,\"selectedPattern\":%d,\"brightness\":%d,\"memory\":{\"used\":%d,\"free\":%d,\"total\":%d},\"patterns\":",GIT_CURRENT_VERSION,isPowerOn(),patternManager.getSelectedPattern(),config.brightness,patternManager.getUsedBlocks(),patternManager.getAvailableBlocks(),patternManager.getTotalBlocks());
   bufferSize -= size;
   ptr += size;
 
