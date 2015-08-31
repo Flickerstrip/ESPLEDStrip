@@ -25,6 +25,7 @@ ESPWS2812 strip(LED_STRIP,150,true);
 NetworkManager network;
 PatternManager patternManager(&flash);
 CaptivePortalConfigurator cpc("esp8266confignetwork");
+ESP8266WebServer webserver(80);
 
 uint8_t macAddr[WL_MAC_ADDR_LENGTH];
 uint16_t stripLength = 150;
@@ -70,15 +71,18 @@ void setup() {
   
   Serial.println("\n\n");
 
+  Serial.println("successful yay");
+  Serial.println("successful even better");
+
   /*
   while(1) {
-    delay(4000);
-    for (int i=0; i<20; i++) {
+    delay(500);
+    //for (int i=0; i<20; i++) {
       int a = analogRead(A0);
       Serial.println(a);
-      delay(1);
-    }
-    Serial.println("Done\n");
+      //delay(1);
+    //}
+    //Serial.println("Done\n");
   }
   */
 
@@ -87,6 +91,9 @@ void setup() {
   //factoryReset();
 
   loadConfiguration();
+  //config.ssid[0] = 0;
+  //saveConfiguration();
+
   patternManager.loadPatterns();
   Serial.print("Loaded patterns: ");
   Serial.println(patternManager.getPatternCount());
@@ -135,7 +142,7 @@ void loadConfiguration() {
   if (config.ssid[0] == 255) config.ssid[0] = 0;
   if (config.password[0] == 255) config.password[0] = 0;
   if (config.selectedPattern == 255) config.selectedPattern = 0;
-  //if (config.brightness == 255) config.brightness = 10;
+  if (config.brightness == 255) config.brightness = 10;
 }
 
 void saveConfiguration() {
@@ -204,6 +211,8 @@ const byte PATTERN_BODY = 7;
 const byte DISCONNECT_NETWORK = 8;
 const byte SET_BRIGHTNESS = 9;
 const byte TOGGLE_POWER = 10;
+const byte SAVE_TEST_PATTERN = 11;
+const byte UPLOAD_FIRMWARE = 12;
 
 unsigned long lastStart;
 void start() {
@@ -219,6 +228,7 @@ void stop(String s) {
 }
 
 void selectPattern(byte pattern) {
+  patternManager.showTestPattern(false);
   patternManager.selectPattern(pattern);
   config.selectedPattern = patternManager.getSelectedPattern();
   saveConfiguration();
@@ -258,13 +268,32 @@ void processBuffer(byte * buf, int len) {
     }
 
     selectPattern(pattern);
+  } else if (packet->type == SAVE_TEST_PATTERN) {
+    byte * start = buf;
+    //BE AWARE: word alignment seems to matter.. we're copying this to a different location to avoid pointer alignment issues
+    PatternManager::PatternMetadata pat;
+    memcpy(&pat,buf,sizeof(PatternManager::PatternMetadata));
+
+    patternManager.saveTestPattern(&pat);
+
+    lastSavedPattern = 0xff;
+    start = start + sizeof(PatternManager::PatternMetadata); //start of payload
+    uint32_t remaining = len - (start-(byte*)buf);
+    if (remaining > 0) {
+      patternManager.saveTestPatternBody(0,(byte*)start,remaining);
+    }
+
+    patternManager.showTestPattern(true);
   } else if (packet->type == PATTERN_BODY) {
     byte pattern = packet->param1;
     uint32_t patternPage = packet->param2;
 
     if (pattern == 0xff) pattern = lastSavedPattern;
-
-    patternManager.saveLedPatternBody(pattern,patternPage,buf,len);
+    if (pattern == 0xff) { //test pattern
+      patternManager.saveTestPatternBody(patternPage,buf,len);
+    } else {
+      patternManager.saveLedPatternBody(pattern,patternPage,buf,len);
+    }
   } else if (packet->type == DISCONNECT_NETWORK) {
     disconnect = true;
   } else if (packet->type == SET_BRIGHTNESS) {
@@ -279,8 +308,59 @@ void processBuffer(byte * buf, int len) {
     if (packet->param1 == 0) toggleStrip(false);
     if (packet->param1 == 1) toggleStrip(true);
     if (packet->param1 == 2) toggleStrip(!isPowerOn());
+  } else if (packet->type == UPLOAD_FIRMWARE) {
+    uint32_t uploadSize = packet->param1;
+    
+    loadFirmware(uploadSize);
+
+    Serial.println();
+    Serial.println("DONE!");
   }
   network.getTcp()->write("{\"type\":\"ready\"}\n\n");
+}
+
+void loadFirmware(uint32_t uploadSize) {
+    Serial.println("FIRMWARE: ");
+    Serial.print(uploadSize);
+    uint32_t totalBytesRead = 0;
+    if(!Update.begin(uploadSize)){
+      Serial.println("Update Begin Error");
+      return;
+    }
+
+    uint32_t written = 0;
+    while(!Update.isFinished()) {
+      written = Update.write(*network.getTcp());
+      if (written > 0) network.getTcp()->write(1);
+    }
+
+    if(Update.end()){
+      Serial.printf("Update Success\nRebooting...\n");
+      ESP.restart();
+    } else {
+      Update.printError(*network.getTcp());
+      Update.printError(Serial);
+    }
+
+    /*
+    while(1) {
+      yield();
+      int bytesread = 0;
+      while(network.getTcp()->available()) {
+        char c = network.getTcp()->read();
+        bytesread++;
+        totalBytesRead++;
+        if (totalBytesRead >= uploadSize) {
+          network.getTcp()->write(1);
+          return;
+        }
+      }
+      Serial.print(totalBytesRead);
+      Serial.print(" of ");
+      Serial.println(uploadSize);
+      network.getTcp()->write(1);
+    }
+    */
 }
 
 /*
@@ -337,6 +417,7 @@ void patternTick() {
 }
 
 void nextMode() {
+  patternManager.showTestPattern(false);
   if (!isPowerOn()) {
     toggleStrip(true);
   } else if(config.selectedPattern+1 >= patternManager.getPatternCount()) {
@@ -483,8 +564,47 @@ void loop() {
       if (debug) Serial.println(WiFi.localIP());
 
       disconnect = false;
+      webserver.on("/", HTTP_GET, [](){
+        webserver.sendHeader("Connection", "close");
+        webserver.sendHeader("Access-Control-Allow-Origin", "*");
+        webserver.send(200, "text/html", "<form method='POST' action='/update' enctype='multipart/form-data'><input type='file' name='update'><input type='submit' value='Update'></form>");
+
+      });
+      webserver.onFileUpload([](){
+        if(webserver.uri() != "/update") return;
+        HTTPUpload& upload = webserver.upload();
+        if(upload.status == UPLOAD_FILE_START){
+          Serial.setDebugOutput(true);
+          WiFiUDP::stopAll();
+          Serial.printf("Update: %s\n", upload.filename.c_str());
+          uint32_t maxSketchSpace = (ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000;
+          if(!Update.begin(maxSketchSpace)) { //start with max available size
+            Update.printError(Serial);
+          }
+        } else if(upload.status == UPLOAD_FILE_WRITE){
+          if(Update.write(upload.buf, upload.currentSize) != upload.currentSize){
+            Update.printError(Serial);
+          }
+        } else if(upload.status == UPLOAD_FILE_END){
+          if(Update.end(true)){ //true to set the size to the current progress
+            Serial.printf("Update Success: %u\nRebooting...\n", upload.totalSize);
+          } else {
+            Update.printError(Serial);
+          }
+          Serial.setDebugOutput(false);
+        }
+        yield();
+      });
+      webserver.on("/update", HTTP_POST, [](){
+        webserver.sendHeader("Connection", "close");
+        webserver.sendHeader("Access-Control-Allow-Origin", "*");
+        webserver.send(200, "text/plain", (Update.hasError())?"FAIL":"OK");
+        ESP.restart();
+      });
+      webserver.begin();
       while(WiFi.status() == WL_CONNECTED) {
         handleConnectedState();
+        webserver.handleClient();
         delay(1);
 
         if (disconnect) {
@@ -505,6 +625,14 @@ void handleConnectedState() {
   if (!network.isUdpActive()) {
     network.startUdp();
   }
+
+  /*
+  if (!network.isTcpActive()) {
+      Serial.println("connecting tcp..");
+      IPAddress ip(192,168,249,145);
+      network.startTcp(&ip,3836);
+  }
+  */
 
   tick();
 

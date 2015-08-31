@@ -5,6 +5,7 @@ PatternManager::PatternManager(FlashMemory * mem) {
   this->flash = mem;
   this->patternCount = 0;
   this->lastSavedPattern = -1;
+  this->testPatternActive = false;
 }
 
 void PatternManager::loadPatterns() {
@@ -126,6 +127,29 @@ void PatternManager::saveLedPatternBody(int pattern, uint32_t patternStartPage, 
   this->flash->writeBytes(writeLocation,payload,len);
 }
 
+void PatternManager::saveTestPattern(PatternMetadata * pat) {
+  byte insert = findInsertLocation(pat->len);
+  if (insert == 0) {
+      pat->address = 0x300;
+  } else {
+      //address is on the page after the previous pattern
+      pat->address = ((this->patterns[insert-1].address + this->patterns[insert-1].len) & 0xffffff00) + 0x100;
+  }
+
+  memcpy(&this->testPattern,pat,sizeof(PatternMetadata));
+}
+
+void PatternManager::saveTestPatternBody(uint32_t patternStartPage, byte * payload, uint32_t len) {
+  uint32_t writeLocation = testPattern.address + patternStartPage*0x100;
+  this->flash->writeBytes(writeLocation,payload,len);
+}
+
+void PatternManager::showTestPattern(bool show) {
+  this->testPatternActive = show;
+  this->currentFrame = 0;
+  this->lastFrameTime = 0;
+}
+
 int PatternManager::getTotalBlocks() {
   return PatternManager::NUM_PAGES;
 }
@@ -160,6 +184,7 @@ PatternManager::PatternMetadata * PatternManager::getActivePattern() {
 
 bool PatternManager::loadNextFrame(byte * ledBuffer, int ledCount, byte brightness) {
   PatternMetadata * active = this->getActivePattern();
+  if (this->testPatternActive) active = &this->testPattern;
   if (millis() - this->lastFrameTime < 1000  / active->fps) return false; //wait for a frame based on fps
   this->lastFrameTime = millis();
   uint32_t width = active->len / (active->frames * 3); //width in pixels of the pattern

@@ -32,6 +32,10 @@ public:
   byte saveLedPatternMetadata(PatternMetadata * pat);
   void saveLedPatternBody(int pattern, uint32_t patternStartPage, byte * payload, uint32_t len);
 
+  void saveTestPattern(PatternMetadata * pat);
+  void saveTestPatternBody(uint32_t patternStartPage, byte * payload, uint32_t len);
+  void showTestPattern(bool show);
+
   int getTotalBlocks();
   int getUsedBlocks();
   int getAvailableBlocks();
@@ -51,6 +55,8 @@ private:
 
   char buf[1000];
   PatternMetadata patterns[MAX_PATTERNS];
+  PatternMetadata testPattern;
+  bool testPatternActive;
 
   int selectedPattern;
   int patternCount;
