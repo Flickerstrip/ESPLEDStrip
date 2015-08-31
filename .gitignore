@@ -1,2 +1,3 @@
 .*.swp
 releases
+.DS_Store

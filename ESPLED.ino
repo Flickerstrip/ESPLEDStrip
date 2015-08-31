@@ -12,6 +12,8 @@
 #include "PatternManager.h"
 #include "CaptivePortalConfigurator.h"
 
+#include "version.h"
+
 #include "Arduino.h"
 
 #define SPI_SCK 5
@@ -71,8 +73,8 @@ void setup() {
   
   Serial.println("\n\n");
 
-  Serial.println("successful yay");
-  Serial.println("successful even better");
+  Serial.print("Flickerstrip Firmware Version: ");
+  Serial.println(GIT_CURRENT_VERSION);
 
   /*
   while(1) {
