@@ -194,9 +194,13 @@ bool PatternManager::loadNextFrame(byte * ledBuffer, int ledCount, byte brightne
   this->flash->readBytes(startAddress,(byte*)buf,width*3);
   
   for (int i=0; i<ledCount; i++) {
-    ledBuffer[3*i+1] = brightness * (buf[(3*(i % width))+0]) >> 8; //we reverse the byte order, strip reads in GRB, stored in RGB
-    ledBuffer[3*i+0] = brightness * (buf[(3*(i % width))+1]) >> 8;
-    ledBuffer[3*i+2] = brightness * (buf[(3*(i % width))+2]) >> 8;
+//    ledBuffer[3*i+1] = brightness * (buf[(3*(i % width))+0]) >> 8; //we reverse the byte order, strip reads in GRB, stored in RGB
+//    ledBuffer[3*i+0] = brightness * (buf[(3*(i % width))+1]) >> 8;
+//    ledBuffer[3*i+2] = brightness * (buf[(3*(i % width))+2]) >> 8;
+
+    ledBuffer[3*i+1] = (buf[(3*(i % width))+0]) >> 4; //we reverse the byte order, strip reads in GRB, stored in RGB
+    ledBuffer[3*i+0] = (buf[(3*(i % width))+1]) >> 4;
+    ledBuffer[3*i+2] = (buf[(3*(i % width))+2]) >> 4;
   }
   this->currentFrame += 1;
   if (this->currentFrame >= active->frames) {

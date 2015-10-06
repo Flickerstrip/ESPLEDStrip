@@ -90,16 +90,29 @@ void setup() {
 
   startupPattern();
 
-  //factoryReset();
-
   loadConfiguration();
-  //config.ssid[0] = 0;
-  //saveConfiguration();
 
   patternManager.loadPatterns();
   Serial.print("Loaded patterns: ");
   Serial.println(patternManager.getPatternCount());
   patternManager.selectPattern(config.selectedPattern);
+
+  /*
+  while(1) {
+    for (int i=0; i<15; i++) {
+      fillStrip(0,i*10,0);
+      strip.sendLeds(leds);
+      delay(250);
+    }
+    for (int i=0; i<15; i++) {
+      fillStrip(0,(15-i)*10,0);
+      strip.sendLeds(leds);
+      delay(250);
+    }
+  }
+  */
+
+  //factoryReset();
 }
 
 void startupPattern() {
@@ -178,9 +191,11 @@ void handleSerial() {
     while(Serial.available()) {
       yield();
       char c = Serial.read();
+      Serial.write(c);
       if (c == '\r') continue;
       if (c == '\n') {
         serialLine();
+        serialIndex = 0;
       }
       serialBuffer[serialIndex++] = c;
       serialBuffer[serialIndex] = 0;
@@ -189,7 +204,7 @@ void handleSerial() {
 }
 
 void serialLine() {
-  serialBuffer[serialIndex] = 0;
+  debugHex(serialBuffer,serialIndex);
   if (strstr(serialBuffer,"ping") != NULL) {
     Serial.println("pong");
   } else if (strstr(serialBuffer,"mac") != NULL) {
@@ -198,6 +213,12 @@ void serialLine() {
       Serial.print(macAddr[i]);
     } 
     Serial.println();
+  } else if (strstr(serialBuffer,"dc") != NULL) {
+    Serial.println("Resetting wireless configuration");
+    config.ssid[0] = 0;
+    config.password[0] = 0;
+    saveConfiguration();
+    ESP.restart();
   }
 }
 
@@ -343,26 +364,6 @@ void loadFirmware(uint32_t uploadSize) {
       Update.printError(*network.getTcp());
       Update.printError(Serial);
     }
-
-    /*
-    while(1) {
-      yield();
-      int bytesread = 0;
-      while(network.getTcp()->available()) {
-        char c = network.getTcp()->read();
-        bytesread++;
-        totalBytesRead++;
-        if (totalBytesRead >= uploadSize) {
-          network.getTcp()->write(1);
-          return;
-        }
-      }
-      Serial.print(totalBytesRead);
-      Serial.print(" of ");
-      Serial.println(uploadSize);
-      network.getTcp()->write(1);
-    }
-    */
 }
 
 /*
@@ -488,7 +489,7 @@ void indicatorTick() {
 void tick() {
   yield();
   
-  //handleSerial();
+  handleSerial();
   if (doIndicator) {
     indicatorTick();
   } else if (isPowerOn()) {
@@ -520,13 +521,14 @@ void loop() {
     if (timedout || strlen(config.ssid) == 0) {
       //Handle configuration AP using a Captive Portal
       cpc.begin();
-      indicateBlueSlow();
+      //indicateBlueSlow();
       while(!cpc.hasConfiguration()) {
         cpc.tick();
+        handleConnectedState();
         tick();
         delay(1);
       }
-      indicateStop();
+      //indicateStop();
 
       cpc.getSSID().toCharArray(config.ssid,50);
       cpc.getPassword().toCharArray(config.password,50);
@@ -627,14 +629,6 @@ void handleConnectedState() {
   if (!network.isUdpActive()) {
     network.startUdp();
   }
-
-  /*
-  if (!network.isTcpActive()) {
-      Serial.println("connecting tcp..");
-      IPAddress ip(192,168,249,145);
-      network.startTcp(&ip,3836);
-  }
-  */
 
   tick();
 
