@@ -182,7 +182,7 @@ PatternManager::PatternMetadata * PatternManager::getActivePattern() {
   return &this->patterns[this->getSelectedPattern()];
 }
 
-bool PatternManager::loadNextFrame(byte * ledBuffer, int ledCount, byte brightness) {
+bool PatternManager::loadNextFrame(Adafruit_NeoPixel &strip) {
   PatternMetadata * active = this->getActivePattern();
   if (this->testPatternActive) active = &this->testPattern;
   if (millis() - this->lastFrameTime < 1000  / active->fps) return false; //wait for a frame based on fps
@@ -193,15 +193,10 @@ bool PatternManager::loadNextFrame(byte * ledBuffer, int ledCount, byte brightne
   byte buf[width*3];
   this->flash->readBytes(startAddress,(byte*)buf,width*3);
   
-  for (int i=0; i<ledCount; i++) {
-//    ledBuffer[3*i+1] = brightness * (buf[(3*(i % width))+0]) >> 8; //we reverse the byte order, strip reads in GRB, stored in RGB
-//    ledBuffer[3*i+0] = brightness * (buf[(3*(i % width))+1]) >> 8;
-//    ledBuffer[3*i+2] = brightness * (buf[(3*(i % width))+2]) >> 8;
-
-    ledBuffer[3*i+1] = (buf[(3*(i % width))+0]) >> 4; //we reverse the byte order, strip reads in GRB, stored in RGB
-    ledBuffer[3*i+0] = (buf[(3*(i % width))+1]) >> 4;
-    ledBuffer[3*i+2] = (buf[(3*(i % width))+2]) >> 4;
+  for (int i=0; i<strip.numPixels(); i++) {
+    strip.setPixelColor(i,buf[(3*(i % width))+0],buf[(3*(i % width))+1],buf[(3*(i % width))+2]);
   }
+
   this->currentFrame += 1;
   if (this->currentFrame >= active->frames) {
     this->currentFrame = 0;

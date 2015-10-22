@@ -2,12 +2,14 @@
 #include <SoftwareSPI.h>
 #include <ESP8266WiFi.h>
 #include <FlashMemory.h>
-#include <ESPWS2812.h>
 #include <EEPROM.h>
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
 #include <DNSServer.h>
+#include <ESP8266SSDP.h>
+#include <WiFiServer.h>
 
+#include <Adafruit_NeoPixel.h>
 #include "NetworkManager.h"
 #include "PatternManager.h"
 #include "CaptivePortalConfigurator.h"
@@ -22,17 +24,28 @@
 #define MEM_CS 4
 #define LED_STRIP 13
 
+void *memchr(const void *s, int c, size_t n)
+{
+    unsigned char *p = (unsigned char*)s;
+    while( n-- )
+        if( *p != (unsigned char)c )
+            p++;
+        else
+            return p;
+    return 0;
+}
+
+uint16_t stripLength = 150;
 FlashMemory flash(SPI_SCK,SPI_MOSI,SPI_MISO,MEM_CS);
-ESPWS2812 strip(LED_STRIP,150,true);
-NetworkManager network;
+//ESPWS2812 strip(LED_STRIP,150,true);
+Adafruit_NeoPixel strip(stripLength, LED_STRIP, NEO_GRB + NEO_KHZ800);
+//NetworkManager network;
 PatternManager patternManager(&flash);
-CaptivePortalConfigurator cpc("esp8266confignetwork");
-ESP8266WebServer webserver(80);
+//CaptivePortalConfigurator cpc("esp8266confignetwork");
+//ESP8266WebServer webserver(80);
+WiFiServer server(80);
 
 uint8_t macAddr[WL_MAC_ADDR_LENGTH];
-uint16_t stripLength = 150;
-uint8_t leds[450];
-int lastSavedPattern = -1;
 bool disconnect = false;
 
 bool debug = true;
@@ -68,6 +81,7 @@ void setup() {
   delay(10);
 
   strip.begin();
+  strip.show();
 
   WiFi.macAddress(macAddr);
   
@@ -88,7 +102,6 @@ void setup() {
   }
   */
 
-  startupPattern();
 
   loadConfiguration();
 
@@ -117,18 +130,16 @@ void setup() {
 
 void startupPattern() {
   fillStrip(10,10,25);
-  strip.sendLeds(leds);
+  strip.show();
   delay(300);
   fillStrip(25,10,10);
-  strip.sendLeds(leds);
+  strip.show();
   delay(300);
 }
 
 void fillStrip(byte r, byte g, byte b) {
   for (int i=0; i<stripLength; i++) {
-    leds[i*3] = g;
-    leds[i*3+1] = r;
-    leds[i*3+2] = b;
+    strip.setPixelColor(i,r,g,b);
   }
 }
 
@@ -174,14 +185,8 @@ void setNetwork(String ssid,String password) {
   password.toCharArray((char *)&config.password,50);
 }
 
-void sendMacAddress() {
-  network.getTcp()->print("id:");
-  for (int i=0; i<WL_MAC_ADDR_LENGTH; i++) {
-    if (i != 0) network.getTcp()->print(":");
-    network.getTcp()->print(macAddr[i]);
-  }
-  network.getTcp()->println();
-  network.getTcp()->println(); 
+int macAddrToString(char * str,int bufferSize) {
+  return snprintf(str,bufferSize,"%x:%x:%x:%x:%x:%x",macAddr[0],macAddr[1],macAddr[2],macAddr[3],macAddr[4],macAddr[5]);
 }
 
 char serialBuffer[100];
@@ -257,6 +262,7 @@ void selectPattern(byte pattern) {
   saveConfiguration();
 }
 
+/*
 void processBuffer(byte * buf, int len) {
   //if (buf[0] != PING) debugHex((char*)buf,len > 20 ? 20 : len);
 
@@ -326,8 +332,6 @@ void processBuffer(byte * buf, int len) {
     saveConfiguration();
     sendStatus();
   } else if (packet->type == TOGGLE_POWER) {
-    Serial.print("toggle power: ");
-    Serial.println(packet->param1);
     if (packet->param1 == 0) toggleStrip(false);
     if (packet->param1 == 1) toggleStrip(true);
     if (packet->param1 == 2) toggleStrip(!isPowerOn());
@@ -341,7 +345,9 @@ void processBuffer(byte * buf, int len) {
   }
   network.getTcp()->write("{\"type\":\"ready\"}\n\n");
 }
+*/
 
+/*
 void loadFirmware(uint32_t uploadSize) {
     Serial.println("FIRMWARE: ");
     Serial.print(uploadSize);
@@ -365,35 +371,31 @@ void loadFirmware(uint32_t uploadSize) {
       Update.printError(Serial);
     }
 }
-
-/*
-pat->name,pat->address,pat->len,pat->frames,pat->flags,pat->fps
-{
-  "type":"status",
-  "patterns":[
-    {
-      "name":"Strip name",
-      "address":addy,
-      "length":len,
-      "frame":frames,
-      "flags":flags,
-      "fps":fps
-    }
-  ],
-  "selectedPattern":5,
-  "brightness":50,
-  "memory":{
-    "used":100,
-    "free":100,
-    "total":100
-  }
-}
-
 */
 
-void sendStatus() {
+void sendHttp(WiFiClient * client, int statusCode, const char * statusText, const char * contentType, const char * content) {
+  int contentLength = strlen(content);
+  char buffer[contentLength+300];
+  int n = snprintf(buffer,contentLength+300,"HTTP/1.0 %d %s\r\nContent-Type: %s\r\nContent-Length:%d\r\n\r\n%s",statusCode,statusText,contentType,strlen(content),content);
+
+  client->write((uint8_t*)buffer,n);
+}
+
+void sendOk(WiFiClient * client) {
+  char content[] = "{\"type\":\"OK\"}";
+  sendHttp(client,200,"OK","application/json",content);
+}
+
+void sendErr(WiFiClient * client, const char * err) {
+  char content[strlen(err)+50];
+  int n = snprintf(content,strlen(err)+50,"{\"type\":\"error\",\"message\":\"%s\"}",err);
+  content[n] = 0;
+  sendHttp(client,500,"Bad Request","application/json",content);
+}
+
+void sendStatus(WiFiClient * client) {
   int bufferSize = 1000;
-  byte jsonBuffer[bufferSize];
+  char jsonBuffer[bufferSize];
   char * ptr = (char*)jsonBuffer;
   int size;
 
@@ -405,18 +407,31 @@ void sendStatus() {
   bufferSize -= size;
   ptr += size;
 
+  size = snprintf(ptr,bufferSize,",\"mac\":\"");
+  bufferSize -= size;
+  ptr += size;
+
+  size = macAddrToString(ptr,bufferSize);
+  bufferSize -= size;
+  ptr += size;
+
+  size = snprintf(ptr,bufferSize,"\"");
+  bufferSize -= size;
+  ptr += size;
+
   size = snprintf(ptr,bufferSize,"}");
   bufferSize -= size;
   ptr += size;
 
-  network.getTcp()->write((uint8_t *)jsonBuffer,(size_t)((int)ptr-(int)jsonBuffer));
-  network.getTcp()->write("\n\n"); //already have one at end of line
+  ptr[0] = 0;
+  sendHttp(client,200,"OK","application/json",jsonBuffer);
 }
 
 void patternTick() {
   byte brightness = (255*config.brightness)/100;
-  bool hasNewFrame = patternManager.loadNextFrame(leds,stripLength,brightness);
-  if (hasNewFrame) strip.sendLeds(leds);
+  strip.setBrightness(brightness);
+  bool hasNewFrame = patternManager.loadNextFrame(strip);
+  if (hasNewFrame) strip.show();
 }
 
 void nextMode() {
@@ -480,42 +495,442 @@ void indicatorTick() {
   byte g = brightness*(indicatorColor[1]>>1) + (indicatorColor[1]>>1);
   byte b = brightness*(indicatorColor[2]>>1) + (indicatorColor[2]>>1);
   fillStrip(r,g,b);
-  strip.sendLeds(leds);
+  strip.show();
 
   indicatorFrame ++;
   if (indicatorFrame > indicatorLength) indicatorFrame = 0;
 }
 
+int powerWasOn = true;
 void tick() {
   yield();
   
-  handleSerial();
-  if (doIndicator) {
-    indicatorTick();
-  } else if (isPowerOn()) {
+  //handleSerial();
+  if (isPowerOn()) {
+    powerWasOn = true;
     patternTick();
-  } else {
+  } else if (powerWasOn == true) {
     fillStrip(0,0,0);
-    strip.sendLeds(leds);
+    strip.show();
+    powerWasOn = false;
   }
 }
 
 
 void handleUdpPacket(IPAddress ip, byte * buf, int len) {
   char * charbuf = (char*)buf;
-  if (strcmp(charbuf,"announce") == 0) {
-    if (!network.isTcpActive()) {
-      int port = atoi(charbuf + strlen(charbuf)+1);
-      network.startTcp(&ip,port);
-      sendMacAddress();
-    }
-  } else if (strcmp(charbuf,"mode") == 0) {
+  if (strcmp(charbuf,"mode") == 0) {
     nextMode();
   }
 }
 
+int findUrl(const char * buf, char ** loc) {
+  char * ptr;
+
+  ptr = strchr(buf,' ');
+  ptr++;
+  loc[0] = ptr;
+
+  ptr = strchr(ptr,' ');
+
+  return ptr - loc[0];
+}
+
+void printFound(int n, char * loc) {
+  char tmp[n+1];
+  memcpy(&tmp,loc,n);
+  tmp[n] = 0;
+  Serial.println(tmp);
+}
+
+int findPath(const char * buf, char ** loc) {
+  char * url;
+  int n = findUrl(buf,&url);
+
+  loc[0] = url;
+
+  char * ptr = (char*)memchr(url,'?',n);
+  if (ptr == NULL) return n;
+
+  return ptr-url;
+}
+
+int findGet(const char * buf, char ** loc, const char * key) {
+  char * url;
+  int n = findUrl(buf,&url);
+
+  char * ptr = strchr(url,'?');
+  if (ptr == NULL) return -1;
+
+  ptr = strstr(ptr+1,key);
+  if (ptr == NULL) return -1;
+
+  char * a = strchr(ptr+1,' ');
+  char * b = strchr(ptr+1,'&');
+  if (b != NULL and (a == NULL or a > b)) {
+    a = b;
+  }
+
+  if (a == NULL) return -1;
+
+  loc[0] = ptr + strlen(key) + 1;
+  return a - loc[0];
+}
+
+bool getInteger(const char * buf, const char * key, int * val) {
+  char * vloc;
+  int vlen = findGet(buf,&vloc,key);
+  if (vlen != -1) {
+    char cval[vlen+1];
+    memcpy(&cval,vloc,vlen);
+    cval[vlen] = 0;
+    int ival = atoi(cval);
+    val[0] = ival;
+    return true;
+  } else {
+    return false;
+  }
+}
+
+bool handleRequest(WiFiClient & client, const char * buf, int n) {
+  char * urlloc;
+  int urllen = findPath(buf,&urlloc);
+  char urlval[urllen+1];
+  memcpy(&urlval,urlloc,urllen);
+  urlval[urllen] = 0;
+
+  if (urllen == 0) {
+    return false;
+  }
+
+  //Serial.print("URL: ");
+  //Serial.println(urlval);
+
+  int val;
+  if (strcmp(urlval,"/") == 0) {
+    toggleStrip(!isPowerOn());
+
+    char content[] = "<html><head><meta http-equiv='refresh' content='5'/></head><body>Refreshing page..</body></html>";
+    sendHttp(&client,200,"OK","text/html",content);
+  } else if (strcmp(urlval,"/description.xml") == 0) {
+    SSDP.schema(client);
+  } else if (strcmp(urlval,"/status") == 0) {
+    sendStatus(&client);
+  } else if (strcmp(urlval,"/power/on") == 0) {
+    toggleStrip(true);
+    sendOk(&client);
+  } else if (strcmp(urlval,"/power/off") == 0) {
+    toggleStrip(false);
+    sendOk(&client);
+  } else if (strcmp(urlval,"/power/toggle") == 0) {
+    toggleStrip(!isPowerOn());
+    sendOk(&client);
+  } else if (strcmp(urlval,"/disconnect") == 0) {
+    disconnect = true;
+    sendOk(&client);
+  } else if (strcmp(urlval,"/brightness") == 0) {
+    bool success = getInteger(buf,"index",&val);
+    if (!success) return false;
+    config.brightness = val;
+    saveConfiguration();
+    sendOk(&client);
+  } else if (strcmp(urlval,"/pattern/forget") == 0) {
+    bool success = getInteger(buf,"index",&val);
+    if (!success) return false;
+    patternManager.deletePattern(val);
+    sendOk(&client);
+  } else if (strcmp(urlval,"/pattern/select") == 0) {
+    bool success = getInteger(buf,"index",&val);
+    if (!success) return false;
+    selectPattern(val);
+    sendOk(&client);
+  } else if (strcmp(urlval,"/pattern/test") == 0 || strcmp(urlval,"/pattern/save") == 0) {
+    bool isTestPattern = strcmp(urlval,"/pattern/test") == 0;
+    char * ptr = strstr(buf,"\r\n\r\n");
+
+    if (ptr == NULL) return false;
+    ptr+=4;
+    int bodysize = n - int(ptr-buf);
+
+    //BE AWARE: word alignment seems to matter.. we're copying this to a different location to avoid pointer alignment issues
+    if (bodysize <= sizeof(PatternManager::PatternMetadata)) return false;
+    PatternManager::PatternMetadata pat;
+    memcpy(&pat,ptr,sizeof(PatternManager::PatternMetadata));
+
+    ptr += sizeof(PatternManager::PatternMetadata); //start of payload
+    uint32_t remaining = n - int(ptr-buf);
+
+    if (isTestPattern) {
+      patternManager.saveTestPattern(&pat);
+      patternManager.saveTestPatternBody(0,(byte*)ptr,remaining);
+      patternManager.showTestPattern(true);
+    } else {
+      byte pattern = patternManager.saveLedPatternMetadata(&pat);
+      patternManager.saveLedPatternBody(pattern,0,(byte*)ptr,remaining);
+      selectPattern(pattern);
+    }
+
+    sendOk(&client);
+  } else {
+    char content[] = "Not Found";
+    sendHttp(&client,404,"Not Found","text/plain",content);
+  }
+  return true;
+}
+
+int readUntil(WiFiClient * client, char * buffer, const char * search, long timeout) {
+  long start = millis();
+  int n = 0;
+  int i = 0;
+  int searchlen = strlen(search);
+  while(client->connected()) {
+    if (millis() - start > timeout) break;
+
+    int b = client->read();
+    if (b == -1) continue;
+    start = millis();
+    buffer[n++] = b;
+    if (search[i] == b) {
+      i++;
+    } else {
+      i = 0;
+    }
+    if (i >= searchlen) break;
+  }
+
+  return n;
+}
+
+char* stristr( char* str1, const char* str2 ) {
+    char* p1 = str1 ;
+    const char* p2 = str2 ;
+    char* r = *p2 == 0 ? str1 : 0 ;
+
+    while( *p1 != 0 && *p2 != 0 )
+    {
+        if( tolower( *p1 ) == tolower( *p2 ) )
+        {
+            if( r == 0 )
+            {
+                r = p1 ;
+            }
+
+            p2++ ;
+        }
+        else
+        {
+            p2 = str2 ;
+            if( tolower( *p1 ) == tolower( *p2 ) )
+            {
+                r = p1 ;
+                p2++ ;
+            }
+            else
+            {
+                r = 0 ;
+            }
+        }
+
+        p1++ ;
+    }
+
+    return *p2 == 0 ? r : 0 ;
+}
+
+int getContentLength(char * buf) {
+  char search[] = "content-length:";
+  char * ptr = stristr(buf,search);
+  if (ptr == NULL) return 0;
+  ptr += strlen(search);
+  while(ptr[0] == '\n' || ptr[0] == '\r' || ptr[0] == '\t' || ptr[0] == ' ') ptr++;
+  return atoi(ptr);
+}
+
+char buf[2000];
+void loop() {
+  WiFiClient client = server.available();
+  bool timedout = false;
+  char ssid[] = "Steven's Castle";
+  char pass[] = "Gizmo3151";
+  memcpy(config.ssid,ssid,strlen(ssid)+1);
+  memcpy(config.password,pass,strlen(pass)+1);
+  while(true) {
+    if (timedout || strlen(config.ssid) == 0) {
+      //TODO handle unconfigured
+      delay(10);
+    } else {
+      WiFi.mode(WIFI_STA);
+      Serial.print("Connecting to ssid: ");
+      Serial.println(config.ssid);
+      WiFi.begin(config.ssid, config.password);
+
+      unsigned long start = millis();
+      unsigned long timeoutDuration = 15000;
+
+      while (WiFi.status() != WL_CONNECTED) {
+        if (millis() - start >= timeoutDuration) break;
+        delay(1);
+        //tick();
+      }
+
+      if (WiFi.status() == WL_CONNECTED) {
+        Serial.print("Connected with IP:");
+        Serial.println(WiFi.localIP());
+      } else {
+        break;
+      }
+
+      Serial.printf("Starting SSDP...\n");
+      SSDP.setSchemaURL("description.xml");
+      SSDP.setHTTPPort(80);
+      SSDP.setName("Flickerstrip LED Strip");
+      SSDP.setSerialNumber("12341234");
+      SSDP.setURL("index.html");
+      SSDP.setModelName("Flickerstrip LED Strip");
+      SSDP.setModelNumber("fl_100");
+      SSDP.setModelURL("http://flickerstrip.com");
+      SSDP.setManufacturer("HomeAutomaton");
+      SSDP.setManufacturerURL("http://homeautomaton.com");
+      SSDP.begin();
+
+      server.begin();
+
+      int i = 0;
+      while(WiFi.status() == WL_CONNECTED) {
+        if (disconnect) {
+          WiFi.disconnect();
+          config.ssid[0] = 0;
+          config.password[0] = 0;
+          saveConfiguration();
+          break;
+        }
+
+        tick();
+        delay(1);
+        WiFiClient client = server.available();
+        if (!client) continue;
+
+        int n = readUntil(&client,buf,"\r\n\r\n",1000);
+        if (n == 0) {
+          Serial.println("failed to read header!");
+          client.stop();
+          continue;
+        }
+        buf[n] = 0; //make sure we're terminated
+
+        //Serial.println("======== HEADER =========");
+        //Serial.println(buf);
+
+        int contentLength = getContentLength(buf);
+
+        int bodyRead = 0;
+        if (contentLength > 0) {
+          int maxWait = 1000;
+          while(client.connected() && !client.available() && maxWait--) delay(1);
+          bodyRead = client.read((byte*)buf+n,contentLength);
+          n += bodyRead;
+          if (bodyRead != contentLength) {
+            Serial.println("ERR: failed to read body!");
+            client.stop();
+            continue;
+          }
+        }
+
+        if (!handleRequest(client,buf,n)) {
+          sendErr(&client,"Error handling request!");
+        }
+
+        int maxWait = 2000;
+        while(client.connected() && maxWait--) {
+          delay(1);
+        }
+        //Serial.print("DISC ");
+
+        client.stop();
+        //Serial.println();
+      }
+      Serial.println("disconnected from wifi");
+    }
+  }
+}
+
+/*
+void handleRoot() {
+  Serial.println("Serving root..");
+  webserver.send(200, "text/html", "<html><head><meta http-equiv='refresh' content='5'/></head><body>Hello world</body></html>"); 
+}
+
 byte networkBuffer[2000];
 void loop() {
+  bool timedout = false;
+  while(true) {
+    if (timedout || strlen(config.ssid) == 0) {
+      //TODO handle unconfigured
+      delay(10);
+    } else {
+      WiFi.mode(WIFI_STA);
+      Serial.print("Connecting to ssid: ");
+      Serial.println(config.ssid);
+      WiFi.begin(config.ssid, config.password);
+
+      unsigned long start = millis();
+      unsigned long timeoutDuration = 15000;
+
+      while (WiFi.status() != WL_CONNECTED) {
+        if (millis() - start >= timeoutDuration) break;
+        delay(1);
+        //tick();
+      }
+
+      Serial.print("Connected with IP:");
+      Serial.println(WiFi.localIP());
+
+      Serial.println("starting webserver");
+      webserver.on("/", HTTP_GET, handleRoot);
+      webserver.on("/description.xml", HTTP_GET, [](){
+        Serial.println("responding to description request");
+        SSDP.schema(webserver.client());
+      });
+
+      Serial.printf("Starting SSDP...\n");
+      SSDP.setSchemaURL("description.xml");
+      SSDP.setHTTPPort(80);
+      SSDP.setName("Flickerstrip LED Strip");
+      SSDP.setSerialNumber("12341234");
+      SSDP.setURL("index.html");
+      SSDP.setModelName("Flickerstrip LED Strip");
+      SSDP.setModelNumber("fl_100");
+      SSDP.setModelURL("http://flickerstrip.com");
+      SSDP.setManufacturer("Reflowster");
+      SSDP.setManufacturerURL("http://reflowster.com");
+      SSDP.begin();
+
+      webserver.begin();
+      webserver.on("/status", HTTP_GET, [](){
+        sendStatus();
+      });
+      webserver.on("/power/on", HTTP_GET, [](){
+        toggleStrip(true);
+        webserver.send(200, "application/json", "{\"response\":\"OK\"}"); 
+      });
+      webserver.on("/power/off", HTTP_GET, [](){
+        toggleStrip(false);
+        webserver.send(200, "application/json", "{\"response\":\"OK\"}"); 
+      });
+      webserver.on("/power/toggle", HTTP_GET, [](){
+        toggleStrip(!isPowerOn());
+        webserver.send(200, "application/json", "{\"response\":\"OK\"}"); 
+      });
+
+      while(WiFi.status() == WL_CONNECTED) {
+        webserver.handleClient();
+        tick();
+        delay(0);
+      }
+
+      Serial.println("Disconnected!");
+    }
+  }
   bool timedout = false;
   while(true) {
     if (timedout || strlen(config.ssid) == 0) {
@@ -624,7 +1039,8 @@ void loop() {
     }
   }
 }
-
+*/
+/*
 void handleConnectedState() {
   if (!network.isUdpActive()) {
     network.startUdp();
@@ -653,7 +1069,7 @@ void handleConnectedState() {
     }
   }
 }
-
+*/
 /////////////////////////////////////////////////////////////
 
 void debugHex(char *buf, int len) {
