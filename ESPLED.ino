@@ -262,117 +262,6 @@ void selectPattern(byte pattern) {
   saveConfiguration();
 }
 
-/*
-void processBuffer(byte * buf, int len) {
-  //if (buf[0] != PING) debugHex((char*)buf,len > 20 ? 20 : len);
-
-  PacketStructure * packet = (PacketStructure*)buf;
-  buf = buf + sizeof(PacketStructure);
-  len = len - sizeof(PacketStructure);
-
-  if (packet->type == PING) {
-    //just respond with ready (below)
-  } else if (packet->type == DELETE_PATTERN) {
-    patternManager.deletePattern(packet->param1);
-  } else if (packet->type == CLEAR_PATTERNS) {
-    patternManager.clearPatterns();
-  } else if (packet->type == SELECT_PATTERN) {
-    byte pattern = packet->param1;
-    selectPattern(pattern);
-  } else if (packet->type == GET_STATUS) {
-    sendStatus();
-  } else if (packet->type == SAVE_PATTERN) {
-    byte * start = buf;
-    //BE AWARE: word alignment seems to matter.. we're copying this to a different location to avoid pointer alignment issues
-    PatternManager::PatternMetadata pat;
-    memcpy(&pat,buf,sizeof(PatternManager::PatternMetadata));
-
-    byte pattern = patternManager.saveLedPatternMetadata(&pat);
-
-    lastSavedPattern = pattern;
-    start = start + sizeof(PatternManager::PatternMetadata); //start of payload
-    uint32_t remaining = len - (start-(byte*)buf);
-    if (remaining > 0) {
-      patternManager.saveLedPatternBody(pattern,0,(byte*)start,remaining);
-    }
-
-    selectPattern(pattern);
-  } else if (packet->type == SAVE_TEST_PATTERN) {
-    byte * start = buf;
-    //BE AWARE: word alignment seems to matter.. we're copying this to a different location to avoid pointer alignment issues
-    PatternManager::PatternMetadata pat;
-    memcpy(&pat,buf,sizeof(PatternManager::PatternMetadata));
-
-    patternManager.saveTestPattern(&pat);
-
-    lastSavedPattern = 0xff;
-    start = start + sizeof(PatternManager::PatternMetadata); //start of payload
-    uint32_t remaining = len - (start-(byte*)buf);
-    if (remaining > 0) {
-      patternManager.saveTestPatternBody(0,(byte*)start,remaining);
-    }
-
-    patternManager.showTestPattern(true);
-  } else if (packet->type == PATTERN_BODY) {
-    byte pattern = packet->param1;
-    uint32_t patternPage = packet->param2;
-
-    if (pattern == 0xff) pattern = lastSavedPattern;
-    if (pattern == 0xff) { //test pattern
-      patternManager.saveTestPatternBody(patternPage,buf,len);
-    } else {
-      patternManager.saveLedPatternBody(pattern,patternPage,buf,len);
-    }
-  } else if (packet->type == DISCONNECT_NETWORK) {
-    disconnect = true;
-  } else if (packet->type == SET_BRIGHTNESS) {
-    config.brightness = packet->param1;
-    Serial.print("Set brightness to: ");
-    Serial.println(config.brightness);
-    saveConfiguration();
-    sendStatus();
-  } else if (packet->type == TOGGLE_POWER) {
-    if (packet->param1 == 0) toggleStrip(false);
-    if (packet->param1 == 1) toggleStrip(true);
-    if (packet->param1 == 2) toggleStrip(!isPowerOn());
-  } else if (packet->type == UPLOAD_FIRMWARE) {
-    uint32_t uploadSize = packet->param1;
-    
-    loadFirmware(uploadSize);
-
-    Serial.println();
-    Serial.println("DONE!");
-  }
-  network.getTcp()->write("{\"type\":\"ready\"}\n\n");
-}
-*/
-
-/*
-void loadFirmware(uint32_t uploadSize) {
-    Serial.println("FIRMWARE: ");
-    Serial.print(uploadSize);
-    uint32_t totalBytesRead = 0;
-    if(!Update.begin(uploadSize)){
-      Serial.println("Update Begin Error");
-      return;
-    }
-
-    uint32_t written = 0;
-    while(!Update.isFinished()) {
-      written = Update.write(*network.getTcp());
-      if (written > 0) network.getTcp()->write(1);
-    }
-
-    if(Update.end()){
-      Serial.printf("Update Success\nRebooting...\n");
-      ESP.restart();
-    } else {
-      Update.printError(*network.getTcp());
-      Update.printError(Serial);
-    }
-}
-*/
-
 void sendHttp(WiFiClient * client, int statusCode, const char * statusText, const char * contentType, const char * content) {
   int contentLength = strlen(content);
   char buffer[contentLength+300];
@@ -592,6 +481,31 @@ bool getInteger(const char * buf, const char * key, int * val) {
   }
 }
 
+void loadFirmware(WiFiClient & client, uint32_t uploadSize) {
+    Serial.println("FIRMWARE: ");
+    Serial.print(uploadSize);
+
+    uint32_t totalBytesRead = 0;
+    if(!Update.begin(uploadSize)){
+      Serial.println("Update Begin Error");
+      return;
+    }
+
+    uint32_t written = 0;
+    while(!Update.isFinished()) {
+      written = Update.write(client);
+      if (written > 0) client.write(1);
+    }
+
+    if(Update.end()){
+      Serial.printf("Update Success\nRebooting...\n");
+      ESP.restart();
+    } else {
+      Update.printError(client);
+      Update.printError(Serial);
+    }
+}
+
 bool handleRequest(WiFiClient & client, const char * buf, int n) {
   char * urlloc;
   int urllen = findPath(buf,&urlloc);
@@ -603,8 +517,29 @@ bool handleRequest(WiFiClient & client, const char * buf, int n) {
     return false;
   }
 
+  int contentLength = getContentLength(buf);
+
+  if (strcmp(urlval,"/update") == 0) {
+    Serial.println("Updating firmware!!");
+    loadFirmware(client,contentLength);
+    return true;
+  }
+
   //Serial.print("URL: ");
   //Serial.println(urlval);
+
+  //Read body if it exists
+  int bodyRead = 0;
+  if (contentLength > 0) {
+    int maxWait = 1000;
+    while(client.connected() && !client.available() && maxWait--) delay(1);
+    bodyRead = client.read((byte*)buf+n,contentLength);
+    n += bodyRead;
+    if (bodyRead != contentLength) {
+      Serial.println("ERR: failed to read body!");
+      return false;
+    }
+  }
 
   int val;
   if (strcmp(urlval,"/") == 0) {
@@ -701,10 +636,10 @@ int readUntil(WiFiClient * client, char * buffer, const char * search, long time
   return n;
 }
 
-char* stristr( char* str1, const char* str2 ) {
-    char* p1 = str1 ;
+const char* stristr(const char* str1, const char* str2 ) {
+    const char* p1 = str1 ;
     const char* p2 = str2 ;
-    char* r = *p2 == 0 ? str1 : 0 ;
+    const char* r = *p2 == 0 ? str1 : 0 ;
 
     while( *p1 != 0 && *p2 != 0 )
     {
@@ -737,9 +672,9 @@ char* stristr( char* str1, const char* str2 ) {
     return *p2 == 0 ? r : 0 ;
 }
 
-int getContentLength(char * buf) {
+int getContentLength(const char * buf) {
   char search[] = "content-length:";
-  char * ptr = stristr(buf,search);
+  const char * ptr = stristr(buf,search);
   if (ptr == NULL) return 0;
   ptr += strlen(search);
   while(ptr[0] == '\n' || ptr[0] == '\r' || ptr[0] == '\t' || ptr[0] == ' ') ptr++;
@@ -820,21 +755,6 @@ void loop() {
 
         //Serial.println("======== HEADER =========");
         //Serial.println(buf);
-
-        int contentLength = getContentLength(buf);
-
-        int bodyRead = 0;
-        if (contentLength > 0) {
-          int maxWait = 1000;
-          while(client.connected() && !client.available() && maxWait--) delay(1);
-          bodyRead = client.read((byte*)buf+n,contentLength);
-          n += bodyRead;
-          if (bodyRead != contentLength) {
-            Serial.println("ERR: failed to read body!");
-            client.stop();
-            continue;
-          }
-        }
 
         if (!handleRequest(client,buf,n)) {
           sendErr(&client,"Error handling request!");
