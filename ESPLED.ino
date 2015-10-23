@@ -24,6 +24,8 @@
 #define MEM_CS 4
 #define LED_STRIP 13
 
+#define DEBUG_UPDATER true
+
 void *memchr(const void *s, int c, size_t n)
 {
     unsigned char *p = (unsigned char*)s;
@@ -482,20 +484,41 @@ bool getInteger(const char * buf, const char * key, int * val) {
 }
 
 void loadFirmware(WiFiClient & client, uint32_t uploadSize) {
-    Serial.println("FIRMWARE: ");
-    Serial.print(uploadSize);
+    Serial.print("FIRMWARE: ");
+    Serial.println(uploadSize);
 
     uint32_t totalBytesRead = 0;
     if(!Update.begin(uploadSize)){
       Serial.println("Update Begin Error");
       return;
+    } else {
+      Serial.println("begin success");
     }
 
     uint32_t written = 0;
+    byte updateBuffer[1000];
     while(!Update.isFinished()) {
-      written = Update.write(client);
-      if (written > 0) client.write(1);
+      yield();
+      int n = readBytes(client,(char*)updateBuffer,1000,2000);
+      if (n == 0) {
+        Serial.println("readBytes returned nothing!");
+        return;
+      }
+      //Serial.println("running update.write");
+      yield();
+      written += Update.write(updateBuffer,n);
+      yield();
+      if (written % 10000 <= 1000) {
+        Serial.print(written);
+        Serial.print(" of ");
+        Serial.print(uploadSize);
+        Serial.print(" ");
+        Serial.print((written*100)/uploadSize);
+        Serial.println("%");
+      }
+      //if (written > 0) client.write(1);
     }
+    Serial.println("end of update loop");
 
     if(Update.end()){
       Serial.printf("Update Success\nRebooting...\n");
@@ -506,7 +529,28 @@ void loadFirmware(WiFiClient & client, uint32_t uploadSize) {
     }
 }
 
-bool handleRequest(WiFiClient & client, const char * buf, int n) {
+int readBytes(WiFiClient & client, char * buf, int length, int timeout) {
+  long start = millis();
+  int bytesRead = 0;
+  while(bytesRead < length) {
+    if (client.connected() == false || millis() - start > timeout) break;
+    if (client.available()) {
+      int readThisTime = client.read((uint8_t*)buf,length-bytesRead);
+      bytesRead += readThisTime;
+      buf += readThisTime;
+//      Serial.print("read: ");
+//      Serial.print(readThisTime);
+//      Serial.print("  total: ");
+//      Serial.println(bytesRead);
+      if (bytesRead != 0) {
+        start = millis();
+      }
+    }
+  }
+  return bytesRead;
+}
+
+bool handleRequest(WiFiClient & client, char * buf, int n) {
   char * urlloc;
   int urllen = findPath(buf,&urlloc);
   char urlval[urllen+1];
@@ -518,10 +562,24 @@ bool handleRequest(WiFiClient & client, const char * buf, int n) {
   }
 
   int contentLength = getContentLength(buf);
+  int maxWait = 1000;
 
   if (strcmp(urlval,"/update") == 0) {
     Serial.println("Updating firmware!!");
+
+//    char miniBuf[1000];
+//    int bodyRead = 0;
+//    while(true) {
+//      int newRead = readBytes(client,miniBuf,1000,1000);
+//      if (newRead == 0) break;
+//      bodyRead += newRead;
+//    }
+//
+//    Serial.print("Read: ");
+//    Serial.println(bodyRead);
+
     loadFirmware(client,contentLength);
+    sendErr(&client,"Update failed");
     return true;
   }
 
@@ -531,7 +589,6 @@ bool handleRequest(WiFiClient & client, const char * buf, int n) {
   //Read body if it exists
   int bodyRead = 0;
   if (contentLength > 0) {
-    int maxWait = 1000;
     while(client.connected() && !client.available() && maxWait--) delay(1);
     bodyRead = client.read((byte*)buf+n,contentLength);
     n += bodyRead;
@@ -992,7 +1049,7 @@ void handleConnectedState() {
 */
 /////////////////////////////////////////////////////////////
 
-void debugHex(char *buf, int len) {
+void debugHex(const char *buf, int len) {
     for (int i=0; i<len; i++) {
         Serial.print(" ");
         if (buf[i] >= 32 && buf[i] <= 126) {
