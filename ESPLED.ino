@@ -107,6 +107,8 @@ void setup() {
 
   loadConfiguration();
 
+//  factoryReset();
+
   patternManager.loadPatterns();
   Serial.print("Loaded patterns: ");
   Serial.println(patternManager.getPatternCount());
@@ -127,7 +129,6 @@ void setup() {
   }
   */
 
-  //factoryReset();
 }
 
 void startupPattern() {
@@ -533,6 +534,7 @@ int readBytes(WiFiClient & client, char * buf, int length, int timeout) {
   long start = millis();
   int bytesRead = 0;
   while(bytesRead < length) {
+    yield();
     if (client.connected() == false || millis() - start > timeout) break;
     if (client.available()) {
       int readThisTime = client.read((uint8_t*)buf,length-bytesRead);
@@ -587,16 +589,15 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
   //Serial.println(urlval);
 
   //Read body if it exists
-  int bodyRead = 0;
-  if (contentLength > 0) {
-    while(client.connected() && !client.available() && maxWait--) delay(1);
-    bodyRead = client.read((byte*)buf+n,contentLength);
-    n += bodyRead;
-    if (bodyRead != contentLength) {
-      Serial.println("ERR: failed to read body!");
-      return false;
-    }
-  }
+//  int bodyRead = 0;
+//  char body[contentLength];
+//  if (contentLength > 0) {
+//    bodyRead = readBytes(client,body,contentLength,1000);
+//    if (bodyRead != contentLength) {
+//      Serial.println("ERR: failed to read body!");
+//      return false;
+//    }
+//  }
 
   int val;
   if (strcmp(urlval,"/") == 0) {
@@ -621,7 +622,7 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
     disconnect = true;
     sendOk(&client);
   } else if (strcmp(urlval,"/brightness") == 0) {
-    bool success = getInteger(buf,"index",&val);
+    bool success = getInteger(buf,"value",&val);
     if (!success) return false;
     config.brightness = val;
     saveConfiguration();
@@ -638,27 +639,57 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
     sendOk(&client);
   } else if (strcmp(urlval,"/pattern/test") == 0 || strcmp(urlval,"/pattern/save") == 0) {
     bool isTestPattern = strcmp(urlval,"/pattern/test") == 0;
-    char * ptr = strstr(buf,"\r\n\r\n");
-
-    if (ptr == NULL) return false;
-    ptr+=4;
-    int bodysize = n - int(ptr-buf);
 
     //BE AWARE: word alignment seems to matter.. we're copying this to a different location to avoid pointer alignment issues
-    if (bodysize <= sizeof(PatternManager::PatternMetadata)) return false;
     PatternManager::PatternMetadata pat;
-    memcpy(&pat,ptr,sizeof(PatternManager::PatternMetadata));
+    int readSize = readBytes(client,(char*)&pat,sizeof(PatternManager::PatternMetadata),1000);
+    if (readSize != sizeof(PatternManager::PatternMetadata)) {
+      Serial.println("Error reading pattern metadata!");
+      return false;
+    }
 
-    ptr += sizeof(PatternManager::PatternMetadata); //start of payload
-    uint32_t remaining = n - int(ptr-buf);
+    uint32_t remaining = contentLength - readSize;
 
+    //TODO clean up the test vs save functionality (dedupe)
     if (isTestPattern) {
       patternManager.saveTestPattern(&pat);
-      patternManager.saveTestPatternBody(0,(byte*)ptr,remaining);
+      int page = 0;
+      byte pagebuffer[0x100];
+      while(remaining > 0) {
+//        Serial.print("loading page: ");
+//        Serial.println(page);
+//        Serial.print("remaining: ");
+//        Serial.println(remaining);
+        int pageReadSize = 0x100;
+        if (remaining < pageReadSize) pageReadSize = remaining;
+        readSize = readBytes(client,(char*)&pagebuffer,0x100,1000);
+        if (readSize != pageReadSize) {
+          Serial.println("Short read!");
+          return false;
+        }
+        remaining -= readSize;
+        patternManager.saveTestPatternBody(page++,(byte*)&pagebuffer,0x100);
+      }
       patternManager.showTestPattern(true);
     } else {
       byte pattern = patternManager.saveLedPatternMetadata(&pat);
-      patternManager.saveLedPatternBody(pattern,0,(byte*)ptr,remaining);
+      int page = 0;
+      byte pagebuffer[0x100];
+      while(remaining > 0) {
+//        Serial.print("loading page: ");
+//        Serial.println(page);
+//        Serial.print("remaining: ");
+//        Serial.println(remaining);
+        int pageReadSize = 0x100;
+        if (remaining < pageReadSize) pageReadSize = remaining;
+        readSize = readBytes(client,(char*)&pagebuffer,0x100,1000);
+        if (readSize != pageReadSize) {
+          Serial.println("Short read!");
+          return false;
+        }
+        remaining -= readSize;
+        patternManager.saveLedPatternBody(pattern,page++,(byte*)&pagebuffer,0x100);
+      }
       selectPattern(pattern);
     }
 
@@ -810,8 +841,8 @@ void loop() {
         }
         buf[n] = 0; //make sure we're terminated
 
-        //Serial.println("======== HEADER =========");
-        //Serial.println(buf);
+//        Serial.println("======== HEADER =========");
+//        Serial.println(buf);
 
         if (!handleRequest(client,buf,n)) {
           sendErr(&client,"Error handling request!");
