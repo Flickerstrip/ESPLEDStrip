@@ -1,0 +1,31 @@
+#!/bin/bash
+
+
+ROOT=$(cd `dirname "${BASH_SOURCE[0]}"`/.. && pwd)
+REPO=julianh2o/ESPLEDStrip
+RELEASE=`git describe --abbrev=0`
+
+if [ ! -e "$ROOT/credentials.txt" ]; then
+    echo "credentials.txt not found, fill this with an access token to continue"
+    exit
+fi
+
+RELEASE_LOG=$(mktemp /tmp/releasetext.XXXXXX)
+(echo "Changelog: "; git log `git describe --tags --abbrev=0 'HEAD^'`..HEAD --oneline | tail -n +2 | tail -r | sed 's/^[^ ]* /* /') > $RELEASE_LOG
+
+touch -A -01 $RELEASE_LOG
+EDIT_TIME=`stat -f %m $RELEASE_LOG`
+
+vi $RELEASE_LOG
+
+NEW_TIME=`stat -f %m $RELEASE_LOG`
+if [ "$EDIT_TIME" -eq "$NEW_TIME" ]
+then
+    echo "Publish release cancelled"
+else
+    (cd $ROOT; make -B)
+
+    ID=`curl https://api.github.com/repos/$REPO/releases -H "Authorization: token `cat $ROOT/credentials.txt`" --data '{"tag_name":"'$RELEASE'","name":"'$RELEASE'","body":"$BODY","draft":false,"prerelease":false}' | perl -nle 'print "$1" if (/"id":.?([0-9]*?),/)' | head -n 1`
+    curl -s -S -X POST https://uploads.github.com/repos/$REPO/releases/$ID/assets?name=$RELEASE.bin -A "$REPO script" --header "Content-Type: application/octet-stream" --header "Accept: application/vnd.github.v3+json" --data-binary @"$ROOT/releases/$RELEASE.bin" -H "Authorization: token `cat $ROOT/credentials.txt`"
+fi
+

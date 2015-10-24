@@ -1,3 +1,5 @@
 .*.swp
 releases
 .DS_Store
+build
+credentials.txt

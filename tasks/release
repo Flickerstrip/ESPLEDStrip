@@ -54,4 +54,3 @@ git add version.h
 git commit -m "Preparing for release of $NEXT_REVISION"
 git tag -a $NEXT_REVISION -m "Releasing revision $NEXT_REVISION"
 git push origin $NEXT_REVISION
-
