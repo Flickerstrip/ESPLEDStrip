@@ -4,13 +4,11 @@
 #include <FlashMemory.h>
 #include <EEPROM.h>
 #include <WiFiClient.h>
-#include <ESP8266WebServer.h>
 #include <DNSServer.h>
 #include <ESP8266SSDP.h>
 #include <WiFiServer.h>
 
 #include <Adafruit_NeoPixel.h>
-#include "NetworkManager.h"
 #include "PatternManager.h"
 #include "CaptivePortalConfigurator.h"
 
@@ -18,33 +16,27 @@
 
 #include "Arduino.h"
 
-#define SPI_SCK 5
-#define SPI_MOSI 14
-#define SPI_MISO 16
+#include "util.h"
+
+//Old pinout
+//#define SPI_SCK 5
+//#define SPI_MOSI 14
+//#define SPI_MISO 16
+//#define MEM_CS 4
+//#define LED_STRIP 13
+
+//New pinout
+#define SPI_SCK 12
+#define SPI_MOSI 16
+#define SPI_MISO 13
 #define MEM_CS 4
-#define LED_STRIP 13
-
-#define DEBUG_UPDATER true
-
-void *memchr(const void *s, int c, size_t n)
-{
-    unsigned char *p = (unsigned char*)s;
-    while( n-- )
-        if( *p != (unsigned char)c )
-            p++;
-        else
-            return p;
-    return 0;
-}
+#define LED_STRIP 14
 
 uint16_t stripLength = 150;
 FlashMemory flash(SPI_SCK,SPI_MOSI,SPI_MISO,MEM_CS);
-//ESPWS2812 strip(LED_STRIP,150,true);
 Adafruit_NeoPixel strip(stripLength, LED_STRIP, NEO_GRB + NEO_KHZ800);
-//NetworkManager network;
 PatternManager patternManager(&flash);
 //CaptivePortalConfigurator cpc("esp8266confignetwork");
-//ESP8266WebServer webserver(80);
 WiFiServer server(80);
 
 uint8_t macAddr[WL_MAC_ADDR_LENGTH];
@@ -57,6 +49,7 @@ struct Configuration {
   byte selectedPattern;
   byte brightness;
   byte flags;
+  byte configured;
 };
 
 const byte FLAG_POWER = 7;
@@ -77,11 +70,9 @@ unsigned long lastFrameTime;
 bool doIndicator = false;
 /////////////
 
-
 void setup() {
   Serial.begin(115200);
   delay(10);
-
   strip.begin();
   strip.show();
 
@@ -92,43 +83,16 @@ void setup() {
   Serial.print("Flickerstrip Firmware Version: ");
   Serial.println(GIT_CURRENT_VERSION);
 
-  /*
-  while(1) {
-    delay(500);
-    //for (int i=0; i<20; i++) {
-      int a = analogRead(A0);
-      Serial.println(a);
-      //delay(1);
-    //}
-    //Serial.println("Done\n");
+  //Load configuration returns false if configuration is not set
+  if (!loadConfiguration()) {
+    factoryReset();
   }
-  */
 
-
-  loadConfiguration();
-
-//  factoryReset();
-
+  Serial.println("loading patterns..");
   patternManager.loadPatterns();
   Serial.print("Loaded patterns: ");
   Serial.println(patternManager.getPatternCount());
   patternManager.selectPattern(config.selectedPattern);
-
-  /*
-  while(1) {
-    for (int i=0; i<15; i++) {
-      fillStrip(0,i*10,0);
-      strip.sendLeds(leds);
-      delay(250);
-    }
-    for (int i=0; i<15; i++) {
-      fillStrip(0,(15-i)*10,0);
-      strip.sendLeds(leds);
-      delay(250);
-    }
-  }
-  */
-
 }
 
 void startupPattern() {
@@ -147,31 +111,29 @@ void fillStrip(byte r, byte g, byte b) {
 }
 
 void factoryReset() {
-  Serial.println("Resetting to Factory Defaults");
   patternManager.resetPatternsToDefault();
 
-  EEPROM.begin(sizeof(Configuration));
-  for (int i=0; i<sizeof(Configuration); i++) {
-    EEPROM.write(i,0xff);
+  loadDefaultConfiguration();
 
-  }
-  EEPROM.end();
-
-  loadConfiguration();
+  saveConfiguration();
 }
 
-void loadConfiguration() {
+void loadDefaultConfiguration() {
+  config.ssid[0] = 0;
+  config.password[0] = 0;
+  config.selectedPattern = 0;
+  config.brightness = 10;
+  config.flags = 0b00000001; //Default power on
+}
+
+bool loadConfiguration() {
   EEPROM.begin(sizeof(Configuration));
   for (int i=0; i<sizeof(Configuration); i++) {
     ((byte *)(&config))[i] = EEPROM.read(i);
   }
   EEPROM.end();
 
-  //make these valid strings of length 0
-  if (config.ssid[0] == 255) config.ssid[0] = 0;
-  if (config.password[0] == 255) config.password[0] = 0;
-  if (config.selectedPattern == 255) config.selectedPattern = 0;
-  if (config.brightness == 255) config.brightness = 10;
+  return config.configured != 255;
 }
 
 void saveConfiguration() {
@@ -228,34 +190,6 @@ void serialLine() {
     saveConfiguration();
     ESP.restart();
   }
-}
-
-
-const byte UNUSED = 0;
-const byte PING = 1;
-const byte GET_STATUS = 2;
-const byte CLEAR_PATTERNS = 3;
-const byte DELETE_PATTERN = 4;
-const byte SELECT_PATTERN = 5;
-const byte SAVE_PATTERN = 6;
-const byte PATTERN_BODY = 7;
-const byte DISCONNECT_NETWORK = 8;
-const byte SET_BRIGHTNESS = 9;
-const byte TOGGLE_POWER = 10;
-const byte SAVE_TEST_PATTERN = 11;
-const byte UPLOAD_FIRMWARE = 12;
-
-unsigned long lastStart;
-void start() {
-  lastStart = millis();
-}
-
-void stop(String s) {
-  Serial.print(s);
-  Serial.print(": ");
-  Serial.print(millis()-lastStart);
-  Serial.print("ms");
-  Serial.println();
 }
 
 void selectPattern(byte pattern) {
@@ -540,10 +474,6 @@ int readBytes(WiFiClient & client, char * buf, int length, int timeout) {
       int readThisTime = client.read((uint8_t*)buf,length-bytesRead);
       bytesRead += readThisTime;
       buf += readThisTime;
-//      Serial.print("read: ");
-//      Serial.print(readThisTime);
-//      Serial.print("  total: ");
-//      Serial.println(bytesRead);
       if (bytesRead != 0) {
         start = millis();
       }
@@ -587,17 +517,6 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
 
   //Serial.print("URL: ");
   //Serial.println(urlval);
-
-  //Read body if it exists
-//  int bodyRead = 0;
-//  char body[contentLength];
-//  if (contentLength > 0) {
-//    bodyRead = readBytes(client,body,contentLength,1000);
-//    if (bodyRead != contentLength) {
-//      Serial.println("ERR: failed to read body!");
-//      return false;
-//    }
-//  }
 
   int val;
   if (strcmp(urlval,"/") == 0) {
@@ -656,10 +575,6 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
       int page = 0;
       byte pagebuffer[0x100];
       while(remaining > 0) {
-//        Serial.print("loading page: ");
-//        Serial.println(page);
-//        Serial.print("remaining: ");
-//        Serial.println(remaining);
         int pageReadSize = 0x100;
         if (remaining < pageReadSize) pageReadSize = remaining;
         readSize = readBytes(client,(char*)&pagebuffer,0x100,1000);
@@ -676,10 +591,6 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
       int page = 0;
       byte pagebuffer[0x100];
       while(remaining > 0) {
-//        Serial.print("loading page: ");
-//        Serial.println(page);
-//        Serial.print("remaining: ");
-//        Serial.println(remaining);
         int pageReadSize = 0x100;
         if (remaining < pageReadSize) pageReadSize = remaining;
         readSize = readBytes(client,(char*)&pagebuffer,0x100,1000);
@@ -722,42 +633,6 @@ int readUntil(WiFiClient * client, char * buffer, const char * search, long time
   }
 
   return n;
-}
-
-const char* stristr(const char* str1, const char* str2 ) {
-    const char* p1 = str1 ;
-    const char* p2 = str2 ;
-    const char* r = *p2 == 0 ? str1 : 0 ;
-
-    while( *p1 != 0 && *p2 != 0 )
-    {
-        if( tolower( *p1 ) == tolower( *p2 ) )
-        {
-            if( r == 0 )
-            {
-                r = p1 ;
-            }
-
-            p2++ ;
-        }
-        else
-        {
-            p2 = str2 ;
-            if( tolower( *p1 ) == tolower( *p2 ) )
-            {
-                r = p1 ;
-                p2++ ;
-            }
-            else
-            {
-                r = 0 ;
-            }
-        }
-
-        p1++ ;
-    }
-
-    return *p2 == 0 ? r : 0 ;
 }
 
 int getContentLength(const char * buf) {
@@ -861,85 +736,7 @@ void loop() {
     }
   }
 }
-
 /*
-void handleRoot() {
-  Serial.println("Serving root..");
-  webserver.send(200, "text/html", "<html><head><meta http-equiv='refresh' content='5'/></head><body>Hello world</body></html>"); 
-}
-
-byte networkBuffer[2000];
-void loop() {
-  bool timedout = false;
-  while(true) {
-    if (timedout || strlen(config.ssid) == 0) {
-      //TODO handle unconfigured
-      delay(10);
-    } else {
-      WiFi.mode(WIFI_STA);
-      Serial.print("Connecting to ssid: ");
-      Serial.println(config.ssid);
-      WiFi.begin(config.ssid, config.password);
-
-      unsigned long start = millis();
-      unsigned long timeoutDuration = 15000;
-
-      while (WiFi.status() != WL_CONNECTED) {
-        if (millis() - start >= timeoutDuration) break;
-        delay(1);
-        //tick();
-      }
-
-      Serial.print("Connected with IP:");
-      Serial.println(WiFi.localIP());
-
-      Serial.println("starting webserver");
-      webserver.on("/", HTTP_GET, handleRoot);
-      webserver.on("/description.xml", HTTP_GET, [](){
-        Serial.println("responding to description request");
-        SSDP.schema(webserver.client());
-      });
-
-      Serial.printf("Starting SSDP...\n");
-      SSDP.setSchemaURL("description.xml");
-      SSDP.setHTTPPort(80);
-      SSDP.setName("Flickerstrip LED Strip");
-      SSDP.setSerialNumber("12341234");
-      SSDP.setURL("index.html");
-      SSDP.setModelName("Flickerstrip LED Strip");
-      SSDP.setModelNumber("fl_100");
-      SSDP.setModelURL("http://flickerstrip.com");
-      SSDP.setManufacturer("Reflowster");
-      SSDP.setManufacturerURL("http://reflowster.com");
-      SSDP.begin();
-
-      webserver.begin();
-      webserver.on("/status", HTTP_GET, [](){
-        sendStatus();
-      });
-      webserver.on("/power/on", HTTP_GET, [](){
-        toggleStrip(true);
-        webserver.send(200, "application/json", "{\"response\":\"OK\"}"); 
-      });
-      webserver.on("/power/off", HTTP_GET, [](){
-        toggleStrip(false);
-        webserver.send(200, "application/json", "{\"response\":\"OK\"}"); 
-      });
-      webserver.on("/power/toggle", HTTP_GET, [](){
-        toggleStrip(!isPowerOn());
-        webserver.send(200, "application/json", "{\"response\":\"OK\"}"); 
-      });
-
-      while(WiFi.status() == WL_CONNECTED) {
-        webserver.handleClient();
-        tick();
-        delay(0);
-      }
-
-      Serial.println("Disconnected!");
-    }
-  }
-  bool timedout = false;
   while(true) {
     if (timedout || strlen(config.ssid) == 0) {
       //Handle configuration AP using a Captive Portal
@@ -1048,54 +845,3 @@ void loop() {
   }
 }
 */
-/*
-void handleConnectedState() {
-  if (!network.isUdpActive()) {
-    network.startUdp();
-  }
-
-  tick();
-
-  bool tcpActive = network.isTcpActive();
-  network.tick();
-  if (tcpActive && !network.isTcpActive()) {
-    Serial.println("TCP Disconnected");
-  }
-
-  if (network.isUdpActive()) {
-    if (network.udpPacketAvailable()) {
-      IPAddress ip;
-      int readLength = network.getUdpPacket(&ip,(byte*)(&networkBuffer),2000);
-      handleUdpPacket(ip,(byte*)&networkBuffer,readLength);
-    }
-  }
-
-  if (network.isTcpActive()) {
-    if (network.tcpPacketAvailable()) {
-      int readLength = network.getTcpPacket((byte*)&networkBuffer,2000);
-      processBuffer((byte*)&networkBuffer,readLength);
-    }
-  }
-}
-*/
-/////////////////////////////////////////////////////////////
-
-void debugHex(const char *buf, int len) {
-    for (int i=0; i<len; i++) {
-        Serial.print(" ");
-        if (buf[i] >= 32 && buf[i] <= 126) {
-            Serial.print(buf[i]);
-        } else {
-            Serial.print(" ");
-        }
-        Serial.print(" ");
-    }
-    Serial.println();
-
-    for (int i=0; i<len; i++) {
-        if (buf[i] < 16) Serial.print("0");
-        Serial.print(buf[i],HEX);
-        Serial.print(" ");
-    }
-    Serial.println();
-}
