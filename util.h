@@ -1,3 +1,6 @@
+#ifndef util_h
+#define util_h
+
 void *memchr(const void *s, int c, size_t n)
 {
     unsigned char *p = (unsigned char*)s;
@@ -77,3 +80,5 @@ void debugHex(const char *buf, int len) {
     }
     Serial.println();
 }
+
+#endif

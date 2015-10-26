@@ -22,10 +22,8 @@ void PatternManager::loadPatterns() {
 }
 
 void PatternManager::resetPatternsToDefault() {
-  Serial.println("clearing patterns");
   this->clearPatterns();
 
-  Serial.println("generating new pattern");
   PatternMetadata newpat;
   char foo[] = "TwoBlink";
   memcpy(newpat.name, foo, strlen(foo)+1);
