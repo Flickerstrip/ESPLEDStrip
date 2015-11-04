@@ -482,7 +482,7 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
       }
       saveConfiguration();
       reconnect = true;
-      sendHttp(&client,200,"OK","text/html","OK");
+      sendHttp(&client,200,"OK","text/html",confirm_page);
     }
   } else if (strcmp(urlval,"/brightness") == 0) {
     bool success = getInteger(buf,"value",&val);
