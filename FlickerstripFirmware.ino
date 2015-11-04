@@ -39,15 +39,19 @@ FlashMemory flash(SPI_SCK,SPI_MOSI,SPI_MISO,MEM_CS);
 Adafruit_NeoPixel strip(stripLength, LED_STRIP, NEO_GRB + NEO_KHZ800);
 PatternManager patternManager(&flash);
 //CaptivePortalConfigurator cpc("esp8266confignetwork");
+char defaultNetworkName[] = "Flickerstrip";
 WiFiServer server(80);
 
 uint8_t macAddr[WL_MAC_ADDR_LENGTH];
 bool disconnect = false;
+bool reconnect = false;
 
+#define SSID_LENGTH 50
+#define PASSWORD_LENGTH 50
 bool debug = true;
 struct Configuration {
-  char ssid[50];
-  char password[50];
+  char ssid[SSID_LENGTH];
+  char password[PASSWORD_LENGTH];
   byte selectedPattern;
   byte brightness;
   byte flags;
@@ -206,9 +210,7 @@ void serialLine() {
     Serial.println();
   } else if (strstr(serialBuffer,"dc") != NULL) {
     Serial.println("Resetting wireless configuration");
-    config.ssid[0] = 0;
-    config.password[0] = 0;
-    saveConfiguration();
+    forgetNetwork();
     ESP.restart();
   } else if (strstr(serialBuffer,"factory") != NULL) {
     factoryReset();
@@ -458,6 +460,30 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
   } else if (strcmp(urlval,"/disconnect") == 0) {
     disconnect = true;
     sendOk(&client);
+  } else if (strcmp(urlval,"/connect") == 0) {
+    if (strstr(buf,"GET") != NULL) {
+      sendHttp(&client,200,"OK","text/html",login_form);
+    } else {
+      char body[contentLength+1];
+      readBytes(client,(char*)&body,contentLength,1000);
+      body[contentLength] = 0;
+      char * ptr = strtok (body,"=");
+      while (ptr != NULL) {
+        char key[strlen(ptr)+1];
+        memcpy(&key,ptr,strlen(ptr)+1);
+        ptr = strtok (NULL, "&");
+        if (ptr == NULL) break;
+        if (strcmp(key,"ssid") == 0) {
+          urldecode(config.ssid,SSID_LENGTH,ptr);
+        } else if (strcmp(key,"password") == 0) {
+          urldecode(config.password,PASSWORD_LENGTH,ptr);
+        }
+        ptr = strtok (NULL, "=");
+      }
+      saveConfiguration();
+      reconnect = true;
+      sendHttp(&client,200,"OK","text/html","OK");
+    }
   } else if (strcmp(urlval,"/brightness") == 0) {
     bool success = getInteger(buf,"value",&val);
     if (!success) return false;
@@ -532,95 +558,121 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
 }
 
 char buf[2000];
+void handleWebClient(WiFiClient & client) {
+  int n = readUntil(&client,buf,"\r\n\r\n",1000);
+  if (n == 0) {
+    Serial.println("failed to read header!");
+    client.stop();
+    return;
+  }
+  buf[n] = 0; //make sure we're terminated
+
+  if (!handleRequest(client,buf,n)) {
+    sendErr(&client,"Error handling request!");
+  }
+
+  int maxWait = 2000;
+  while(client.connected() && maxWait--) {
+    delay(1);
+  }
+
+  client.stop();
+}
+
+void startSSDP() {
+  Serial.printf("Starting SSDP...\n");
+  SSDP.setSchemaURL("description.xml");
+  SSDP.setHTTPPort(80);
+  SSDP.setName("Flickerstrip LED Strip");
+  SSDP.setSerialNumber("12341234");
+  SSDP.setURL("index.html");
+  SSDP.setModelName("Flickerstrip LED Strip");
+  SSDP.setModelNumber("fl_100");
+  SSDP.setModelURL("http://flickerstrip.com");
+  SSDP.setManufacturer("HomeAutomaton");
+  SSDP.setManufacturerURL("http://homeautomaton.com");
+  SSDP.begin();
+}
+
+bool accessPoint = false;
+bool doConnect() {
+  Serial.print("Connecting to ssid: ");
+  Serial.println(config.ssid);
+  accessPoint = false;
+  WiFi.disconnect();
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(config.ssid, config.password);
+
+  while (WiFi.status() == WL_DISCONNECTED) tick();
+
+  if (WiFi.status() != WL_CONNECTED) return false;
+  Serial.print("Connected with IP:");
+  Serial.println(WiFi.localIP());
+  return true;
+}
+
+void forgetNetwork() {
+  WiFi.disconnect();
+  config.ssid[0] = 0;
+  config.password[0] = 0;
+  saveConfiguration();
+}
+
+bool createAccessPoint() {
+  accessPoint = true;
+  IPAddress ip = IPAddress(192, 168, 1, 1);
+  IPAddress netmask = IPAddress(255, 255, 255, 0);
+
+  WiFi.disconnect();
+  WiFi.mode(WIFI_AP);
+  WiFi.softAPConfig(ip,ip,netmask);
+  WiFi.softAP(defaultNetworkName);
+
+  Serial.print("Created access point: ");
+  Serial.print(defaultNetworkName);
+  Serial.print(" [");
+  Serial.print(WiFi.softAPIP());
+  Serial.println("]");
+  return true;
+}
+
 void loop() {
   WiFiClient client = server.available();
-  bool timedout = false;
-  char ssid[] = "Steven's Castle";
-  char pass[] = "Gizmo3151";
-  memcpy(config.ssid,ssid,strlen(ssid)+1);
-  memcpy(config.password,pass,strlen(pass)+1);
+
+  //char ssid[] = "Steven's Castle";
+  //char pass[] = "Gizmo3151";
+  //memcpy(config.ssid,ssid,strlen(ssid)+1);
+  //memcpy(config.password,pass,strlen(pass)+1);
+  disconnect = false;
+  reconnect = false;
   while(true) {
-    if (timedout || strlen(config.ssid) == 0) {
-      //TODO handle unconfigured
-      delay(10);
-    } else {
-      WiFi.mode(WIFI_STA);
-      Serial.print("Connecting to ssid: ");
-      Serial.println(config.ssid);
-      WiFi.begin(config.ssid, config.password);
-
-      unsigned long start = millis();
-      unsigned long timeoutDuration = 15000;
-
-      while (WiFi.status() != WL_CONNECTED) {
-        if (millis() - start >= timeoutDuration) break;
-        delay(1);
-        //tick();
-      }
-
-      if (WiFi.status() == WL_CONNECTED) {
-        Serial.print("Connected with IP:");
-        Serial.println(WiFi.localIP());
-      } else {
-        break;
-      }
-
-      Serial.printf("Starting SSDP...\n");
-      SSDP.setSchemaURL("description.xml");
-      SSDP.setHTTPPort(80);
-      SSDP.setName("Flickerstrip LED Strip");
-      SSDP.setSerialNumber("12341234");
-      SSDP.setURL("index.html");
-      SSDP.setModelName("Flickerstrip LED Strip");
-      SSDP.setModelNumber("fl_100");
-      SSDP.setModelURL("http://flickerstrip.com");
-      SSDP.setManufacturer("HomeAutomaton");
-      SSDP.setManufacturerURL("http://homeautomaton.com");
-      SSDP.begin();
-
-      server.begin();
-
-      int i = 0;
-      while(WiFi.status() == WL_CONNECTED) {
-        if (disconnect) {
-          WiFi.disconnect();
-          config.ssid[0] = 0;
-          config.password[0] = 0;
-          saveConfiguration();
-          break;
-        }
-
-        tick();
-        delay(1);
-        WiFiClient client = server.available();
-        if (!client) continue;
-
-        int n = readUntil(&client,buf,"\r\n\r\n",1000);
-        if (n == 0) {
-          Serial.println("failed to read header!");
-          client.stop();
-          continue;
-        }
-        buf[n] = 0; //make sure we're terminated
-
-//        Serial.println("======== HEADER =========");
-//        Serial.println(buf);
-
-        if (!handleRequest(client,buf,n)) {
-          sendErr(&client,"Error handling request!");
-        }
-
-        int maxWait = 2000;
-        while(client.connected() && maxWait--) {
-          delay(1);
-        }
-        //Serial.print("DISC ");
-
-        client.stop();
-        //Serial.println();
-      }
-      Serial.println("disconnected from wifi");
+    int attempts = 0;
+    while(attempts <= 3 && strlen(config.ssid)) {
+      attempts++;
+      if (doConnect()) break;
     }
+
+    //start own wifi network if we failed to connect above
+    if (WiFi.status() != WL_CONNECTED) createAccessPoint();
+
+    startSSDP();
+    server.begin();
+
+    while(accessPoint || WiFi.status() == WL_CONNECTED) {
+      if (disconnect) return forgetNetwork();
+      if (reconnect) {
+        Serial.println("reconnecting...");
+        return;
+      }
+
+      tick();
+      delay(1);
+
+      WiFiClient client = server.available();
+      if (!client) continue;
+      handleWebClient(client);
+    }
+    Serial.println("disconnected from wifi");
   }
 }
 /*
