@@ -255,3 +255,16 @@ int PatternManager::serializePatterns(char * buf, int bufferSize) {
   return ptr - buf;
 }
 
+
+void PatternManager::jsonPatterns(JsonArray& arr) {
+  for (int i=0; i<this->getPatternCount(); i++) {
+    JsonObject& json = arr.createNestedObject();
+    json["index"] = i;
+    json["name"] = this->patterns[i].name;
+    json["address"] = this->patterns[i].address;
+    json["length"] = this->patterns[i].len;
+    json["frames"] = this->patterns[i].frames;
+    json["flags"] = this->patterns[i].flags;
+    json["fps"] = this->patterns[i].fps;
+  }
+}

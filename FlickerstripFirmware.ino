@@ -9,6 +9,7 @@
 #include <WiFiServer.h>
 #include <ESP8266WebServer.h>
 
+#include <ArduinoJson.h>
 #include <Adafruit_NeoPixel.h>
 #include "PatternManager.h"
 #include "CaptivePortalConfigurator.h"
@@ -42,16 +43,19 @@ PatternManager patternManager(&flash);
 char defaultNetworkName[] = "Flickerstrip";
 WiFiServer server(80);
 
-uint8_t macAddr[WL_MAC_ADDR_LENGTH];
+char mac[20];
 bool disconnect = false;
 bool reconnect = false;
 
 #define SSID_LENGTH 50
 #define PASSWORD_LENGTH 50
+#define NAME_LENGTH 50
 bool debug = true;
 struct Configuration {
   char ssid[SSID_LENGTH];
   char password[PASSWORD_LENGTH];
+  char stripName[NAME_LENGTH];
+  char groupName[NAME_LENGTH];
   byte selectedPattern;
   byte brightness;
   byte flags;
@@ -89,8 +93,8 @@ void setup() {
   strip.begin();
   strip.show();
 
-  WiFi.macAddress(macAddr);
-  
+  createMacString();
+
   Serial.println("\n\n");
 
   Serial.print("Flickerstrip Firmware Version: ");
@@ -114,6 +118,12 @@ void setup() {
   Serial.print("Loaded patterns: ");
   Serial.println(patternManager.getPatternCount());
   patternManager.selectPattern(config.selectedPattern);
+}
+
+void createMacString() {
+  uint8_t macAddr[WL_MAC_ADDR_LENGTH];
+  WiFi.macAddress(macAddr);
+  snprintf(mac,20,"%x:%x:%x:%x:%x:%x",macAddr[0],macAddr[1],macAddr[2],macAddr[3],macAddr[4],macAddr[5]);
 }
 
 void startupPattern() {
@@ -145,6 +155,8 @@ void factoryReset() {
 void loadDefaultConfiguration() {
   config.ssid[0] = 0;
   config.password[0] = 0;
+  config.stripName[0] = 0;
+  config.groupName[0] = 0;
   config.selectedPattern = 0;
   config.brightness = 10;
   config.flags = (FLAG_CONFIGURED_CONFIGURED << FLAG_CONFIGURED) | //Set configured bit
@@ -176,10 +188,6 @@ void setNetwork(String ssid,String password) {
   password.toCharArray((char *)&config.password,50);
 }
 
-int macAddrToString(char * str,int bufferSize) {
-  return snprintf(str,bufferSize,"%x:%x:%x:%x:%x:%x",macAddr[0],macAddr[1],macAddr[2],macAddr[3],macAddr[4],macAddr[5]);
-}
-
 char serialBuffer[100];
 char serialIndex = 0;
 void handleSerial() {
@@ -203,11 +211,7 @@ void serialLine() {
   if (strstr(serialBuffer,"ping") != NULL) {
     Serial.println("pong");
   } else if (strstr(serialBuffer,"mac") != NULL) {
-    for (int i=0; i<WL_MAC_ADDR_LENGTH; i++) {
-      if (i != 0) Serial.print(":");
-      Serial.print(macAddr[i]);
-    } 
-    Serial.println();
+    Serial.println(mac);
   } else if (strstr(serialBuffer,"dc") != NULL) {
     Serial.println("Resetting wireless configuration");
     forgetNetwork();
@@ -227,37 +231,27 @@ void selectPattern(byte pattern) {
 }
 
 void sendStatus(WiFiClient * client) {
-  int bufferSize = 1000;
-  char jsonBuffer[bufferSize];
-  char * ptr = (char*)jsonBuffer;
-  int size;
+  StaticJsonBuffer<2000> jsonBuffer;
 
-  size = snprintf(ptr,bufferSize,"{\"type\":\"status\",\"firmware\":\"%s\",\"power\":%d,\"selectedPattern\":%d,\"brightness\":%d,\"memory\":{\"used\":%d,\"free\":%d,\"total\":%d},\"patterns\":",GIT_CURRENT_VERSION,isPowerOn(),patternManager.getSelectedPattern(),config.brightness,patternManager.getUsedBlocks(),patternManager.getAvailableBlocks(),patternManager.getTotalBlocks());
-  bufferSize -= size;
-  ptr += size;
+  JsonObject& root = jsonBuffer.createObject();
+  root["type"] = "status";
+  root["name"] = config.stripName;
+  root["group"] = config.groupName;
+  root["firmware"] = GIT_CURRENT_VERSION;
+  root["power"] = isPowerOn();
+  root["mac"] = mac;
+  root["selectedPattern"] = patternManager.getSelectedPattern();
+  root["brightness"] = config.brightness;
 
-  size = patternManager.serializePatterns(ptr,bufferSize);
-  bufferSize -= size;
-  ptr += size;
+  JsonObject& mem = root.createNestedObject("memory");
+  mem["used"] = patternManager.getUsedBlocks();
+  mem["free"] = patternManager.getAvailableBlocks();
+  mem["total"] = patternManager.getTotalBlocks();
 
-  size = snprintf(ptr,bufferSize,",\"mac\":\"");
-  bufferSize -= size;
-  ptr += size;
+  JsonArray& patterns = root.createNestedArray("patterns");
+  patternManager.jsonPatterns(patterns);
 
-  size = macAddrToString(ptr,bufferSize);
-  bufferSize -= size;
-  ptr += size;
-
-  size = snprintf(ptr,bufferSize,"\"");
-  bufferSize -= size;
-  ptr += size;
-
-  size = snprintf(ptr,bufferSize,"}");
-  bufferSize -= size;
-  ptr += size;
-
-  ptr[0] = 0;
-  sendHttp(client,200,"OK","application/json",jsonBuffer);
+  sendHttp(client,200,"OK",root);
 }
 
 void patternTick() {
@@ -280,7 +274,7 @@ void nextMode() {
 }
 
 bool isPowerOn() {
-  return (config.flags >> FLAG_POWER) & 1 == 1;
+  return (config.flags >> FLAG_POWER) & 1 == FLAG_POWER_ON;
 }
 
 void toggleStrip(bool on) {
@@ -402,6 +396,29 @@ void loadFirmware(WiFiClient & client, uint32_t uploadSize) {
     }
 }
 
+int getPostParam(const char * content, const char * key, char * dst, int dstSize) {
+  char * ptr = strstr(content,key);
+  if (ptr == NULL) return -1; //no key found
+  ptr = strchr(ptr,'=');
+  if (ptr == NULL) {
+    dst[0] = 0;
+    return 0; //key found, empty value found
+  }
+
+  int n = 0;
+  content = ptr+1;
+  while(*ptr++) {
+    if (*ptr == 0 || *ptr == '&' || n >= dstSize) {
+      break;
+    }
+    n++;
+  }
+
+  memcpy(dst,content,n);
+  dst[n] = 0;
+  return n;
+}
+
 bool handleRequest(WiFiClient & client, char * buf, int n) {
   char * urlloc;
   int urllen = findPath(buf,&urlloc);
@@ -447,6 +464,26 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
   } else if (strcmp(urlval,"/description.xml") == 0) {
     SSDP.schema(client);
   } else if (strcmp(urlval,"/status") == 0) {
+    sendStatus(&client);
+  } else if (strcmp(urlval,"/config/name") == 0) {
+    char body[contentLength+1];
+    readBytes(client,(char*)&body,contentLength,1000);
+    body[contentLength] = 0;
+    StaticJsonBuffer<200> jsonBuffer;
+    JsonObject& root = jsonBuffer.parseObject(body);
+
+    memcpy(config.stripName,root["name"],strlen(root["name"])+1);
+    saveConfiguration();
+    sendStatus(&client);
+  } else if (strcmp(urlval,"/config/group") == 0) {
+    char body[contentLength+1];
+    readBytes(client,(char*)&body,contentLength,1000);
+    body[contentLength] = 0;
+    StaticJsonBuffer<200> jsonBuffer;
+    JsonObject& root = jsonBuffer.parseObject(body);
+
+    memcpy(config.groupName,root["name"],strlen(root["name"])+1);
+    saveConfiguration();
     sendStatus(&client);
   } else if (strcmp(urlval,"/power/on") == 0) {
     toggleStrip(true);

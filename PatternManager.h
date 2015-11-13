@@ -10,6 +10,7 @@
 
 #include <Adafruit_NeoPixel.h>
 #include <FlashMemory.h>
+#include <ArduinoJson.h>
 
 class PatternManager {
 public:
@@ -47,6 +48,7 @@ public:
 
   bool loadNextFrame(Adafruit_NeoPixel &strip);
   int serializePatterns(char * buf, int len);
+  void jsonPatterns(JsonArray& json);
 
 private:
   const static int NUM_PAGES = 4096;

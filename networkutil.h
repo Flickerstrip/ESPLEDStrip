@@ -1,16 +1,30 @@
 #ifndef networkutil_h
 #define networkutil_h
 
+#include <ArduinoJson.h>
 #include "util.h"
 
 char login_form[] = "<!DOCTYPE html><html><head><meta name=viewport content=\"width=device-width, initial-scale=1\"><title>Flickerstrip Configuration</title><style>body{background:#09F}.b{background:#fff;border-radius:5px;width:300px;margin:0 auto;padding:10px}form{width:100%;margin:0}.sub{float:right;background:#09F;color:#fff;border:none;width:100px;border-radius:5px;-webkit-box-shadow:1px 1px 3px 0 rgba(0,0,0,.78);-moz-box-shadow:1px 1px 3px 0 rgba(0,0,0,.78);box-shadow:1px 1px 3px 0 rgba(0,0,0,.78)}.i{display:block;width:100%;padding:5px;margin-bottom:5px}table{width:100%}#pw{margin-bottom:30px}.h{font-size:24px;text-align:center;font-weight:700;margin-bottom:10px}</style><body><div class=b><div class=h>Configure Flickerstrip</div><form method=POST action=/connect><input class=i name=ssid placeholder=\"Network SSID\"> <input class=i id=pw name=password type=password placeholder=\"Password\"><table><tr><td><label><input id=cb type=checkbox onclick=\"document.getElementById('pw').type=document.getElementById('cb').checked?'text':'password'\">Show password</label><td><input class=sub type=submit></table></form></div>";
-char confirm_page[] = "<!DOCTYPE html><html><head><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>Flickerstrip Configuration</title><style type=text/css>body{background:#09F}.b{background:#fff;border-radius:5px;width:300px;margin:0 auto;padding:10px}.h{font-size:24px;text-align:center;font-weight:700;margin-bottom:10px}</style><body><div class=b><div class=h>Configuring...</div><p>Please reconnect to your network and launch the Flickerstrip app.</p></div>"
+char confirm_page[] = "<!DOCTYPE html><html><head><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>Flickerstrip Configuration</title><style type=text/css>body{background:#09F}.b{background:#fff;border-radius:5px;width:300px;margin:0 auto;padding:10px}.h{font-size:24px;text-align:center;font-weight:700;margin-bottom:10px}</style><body><div class=b><div class=h>Configuring...</div><p>Please reconnect to your network and launch the Flickerstrip app.</p></div>";
 
+
+void sendHttp(WiFiClient * client, int statusCode, const char * statusText, JsonObject& json) {
+  int contentLength = json.measureLength();
+  int bufferSize = contentLength+100;
+  if (bufferSize < 300) bufferSize = 300;
+  char buffer[contentLength];
+  int n = snprintf(buffer,bufferSize,"HTTP/1.0 %d %s\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length:%d\r\n\r\n",statusCode,statusText,contentLength);
+
+  client->write((uint8_t*)buffer,n);
+
+  n = json.printTo(buffer,bufferSize);
+  client->write((uint8_t*)buffer,n);
+}
 
 void sendHttp(WiFiClient * client, int statusCode, const char * statusText, const char * contentType, const char * content) {
   int contentLength = strlen(content);
   char buffer[contentLength+300];
-  int n = snprintf(buffer,contentLength+300,"HTTP/1.0 %d %s\r\nContent-Type: %s\r\nContent-Length:%d\r\n\r\n%s",statusCode,statusText,contentType,strlen(content),content);
+  int n = snprintf(buffer,contentLength+300,"HTTP/1.0 %d %s\r\nContent-Type: %s\r\nConnection: close\r\nContent-Length:%d\r\n\r\n%s",statusCode,statusText,contentType,strlen(content),content);
 
   client->write((uint8_t*)buffer,n);
 }
