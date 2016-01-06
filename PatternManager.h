@@ -12,6 +12,8 @@
 #include <FlashMemory.h>
 #include <ArduinoJson.h>
 
+#define MAXIMUM_PATTERN_BUFFER 450
+
 class PatternManager {
 public:
   PatternManager(FlashMemory * mem);
@@ -44,6 +46,7 @@ public:
 
   int getPatternCount();
   int getSelectedPattern();
+  bool isTestPatternActive();
   PatternMetadata * getActivePattern();
 
   bool loadNextFrame(Adafruit_NeoPixel &strip);

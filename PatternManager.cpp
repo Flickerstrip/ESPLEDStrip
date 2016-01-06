@@ -60,8 +60,8 @@ void PatternManager::selectPattern(byte n) {
     this->selectedPattern = n;
 
     PatternMetadata * pat = &this->patterns[n];
-    Serial.print("Selected pattern: ");
-    Serial.println(pat->name);
+    //Serial.print("Selected pattern: ");
+    //Serial.println(pat->name);
     
     this->currentFrame = 0;
     this->lastFrameTime = 0;
@@ -177,6 +177,10 @@ int PatternManager::getSelectedPattern() {
   return this->selectedPattern;
 }
 
+bool PatternManager::isTestPatternActive() {
+  return this->testPatternActive;
+}
+
 PatternManager::PatternMetadata * PatternManager::getActivePattern() {
   return &this->patterns[this->getSelectedPattern()];
 }
@@ -188,18 +192,29 @@ bool PatternManager::loadNextFrame(Adafruit_NeoPixel &strip) {
   this->lastFrameTime = millis();
   uint32_t width = active->len / (active->frames * 3); //width in pixels of the pattern
   uint32_t startAddress = active->address + (width * 3 * this->currentFrame);
-  
-  byte buf[width*3];
-  this->flash->readBytes(startAddress,(byte*)buf,width*3);
+
+  byte * bbuf = (byte*)this->buf;
+
+//  Serial.print("Pattern Frame: ");
+//  Serial.print(startAddress,HEX);
+//  Serial.print(" ");
+//  Serial.print(width*3);
+//  Serial.println();
+//  Serial.flush();
+  this->flash->readBytes(startAddress,bbuf,width*3);
+//  Serial.println("finished reading pattern");
   
   for (int i=0; i<strip.numPixels(); i++) {
-    strip.setPixelColor(i,buf[(3*(i % width))+0],buf[(3*(i % width))+1],buf[(3*(i % width))+2]);
+    strip.setPixelColor(i,bbuf[(3*(i % width))+0],bbuf[(3*(i % width))+1],bbuf[(3*(i % width))+2]);
   }
+//  Serial.println("finished setting pixels");
 
   this->currentFrame += 1;
   if (this->currentFrame >= active->frames) {
     this->currentFrame = 0;
   }
+
+//  Serial.println(ESP.getFreeHeap());
 
   return true;
 }
@@ -236,6 +251,10 @@ int PatternManager::serializePatterns(char * buf, int bufferSize) {
   bufferSize -= size;
 
   for (int i=0; i<this->getPatternCount(); i++) {
+    //Serial.print("pattern loop: ");
+    //Serial.print(i);
+    //Serial.print("size: ");
+    //Serial.println(bufferSize);
     if (i != 0) {
       size = snprintf(ptr,bufferSize,",");
       ptr += size;

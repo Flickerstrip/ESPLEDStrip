@@ -10,7 +10,7 @@ char confirm_page[] = "<!DOCTYPE html><html><head><meta name=viewport content=\"
 
 void sendHttp(WiFiClient * client, int statusCode, const char * statusText, JsonObject& json) {
   int contentLength = json.measureLength();
-  int bufferSize = contentLength+100;
+  int bufferSize = contentLength+200;
   if (bufferSize < 300) bufferSize = 300;
   char buffer[contentLength];
   int n = snprintf(buffer,bufferSize,"HTTP/1.0 %d %s\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length:%d\r\n\r\n",statusCode,statusText,contentLength);

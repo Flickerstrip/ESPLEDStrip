@@ -9,6 +9,7 @@
 #include <WiFiServer.h>
 #include <ESP8266WebServer.h>
 
+#include "util.h"
 #include <ArduinoJson.h>
 #include <Adafruit_NeoPixel.h>
 #include "PatternManager.h"
@@ -18,7 +19,6 @@
 
 #include "Arduino.h"
 
-#include "util.h"
 #include "networkutil.h"
 
 //Old pinout
@@ -29,11 +29,20 @@
 //#define LED_STRIP 13
 
 //New pinout
-#define SPI_SCK 12
-#define SPI_MOSI 16
-#define SPI_MISO 13
+//#define SPI_SCK 12
+//#define SPI_MOSI 16
+//#define SPI_MISO 13
+//#define MEM_CS 4
+//#define LED_STRIP 14
+
+//New new pinout
+#define SPI_SCK 13
+#define SPI_MOSI 12
+#define SPI_MISO 14
 #define MEM_CS 4
-#define LED_STRIP 14
+#define LED_STRIP 5
+#define BUTTON_LED 16
+#define BUTTON 15
 
 uint16_t stripLength = 150;
 FlashMemory flash(SPI_SCK,SPI_MOSI,SPI_MISO,MEM_CS);
@@ -42,10 +51,17 @@ PatternManager patternManager(&flash);
 //CaptivePortalConfigurator cpc("esp8266confignetwork");
 char defaultNetworkName[] = "Flickerstrip";
 WiFiServer server(80);
+char buf[2000];
 
 char mac[20];
 bool disconnect = false;
 bool reconnect = false;
+byte ledValue = 0;
+long buttonDown = -1;
+byte clicksTriggered = 0;
+
+const byte BUTTON_UP = 1;
+const byte BUTTON_DOWN = 0;
 
 #define SSID_LENGTH 50
 #define PASSWORD_LENGTH 50
@@ -59,6 +75,7 @@ struct Configuration {
   byte selectedPattern;
   byte brightness;
   byte flags;
+  int cycle;
   char version[20];
 };
 
@@ -95,6 +112,10 @@ void setup() {
 
   createMacString();
 
+  pinMode(LED_STRIP,OUTPUT);
+  pinMode(BUTTON_LED,OUTPUT);
+  pinMode(BUTTON,INPUT);
+
   Serial.println("\n\n");
 
   Serial.print("Flickerstrip Firmware Version: ");
@@ -117,6 +138,9 @@ void setup() {
   patternManager.loadPatterns();
   Serial.print("Loaded patterns: ");
   Serial.println(patternManager.getPatternCount());
+  if (patternManager.getPatternCount() == 0) {
+    factoryReset();
+  }
   patternManager.selectPattern(config.selectedPattern);
 }
 
@@ -159,6 +183,7 @@ void loadDefaultConfiguration() {
   config.groupName[0] = 0;
   config.selectedPattern = 0;
   config.brightness = 10;
+  config.cycle = 0;
   config.flags = (FLAG_CONFIGURED_CONFIGURED << FLAG_CONFIGURED) | //Set configured bit
                  (FLAG_POWER_ON << FLAG_POWER);
   memcpy(config.version,GIT_CURRENT_VERSION,strlen(GIT_CURRENT_VERSION)+1);
@@ -230,6 +255,43 @@ void selectPattern(byte pattern) {
   saveConfiguration();
 }
 
+char patternBuffer[1000];
+void sendStatus(WiFiClient * client) {
+
+  int n = snprintf(buf,2000,"{\
+\"type\":\"status\",\
+\"name\":\"%s\",\
+\"group\":\"%s\",\
+\"firmware\":\"%s\",\
+\"power\":%d,\
+\"mac\":\"%s\",\
+\"selectedPattern\":%d,\
+\"brightness\":%d,\
+\"uptime\":%d,\
+\"memory\":{\"used\":%d,\"free\":%d,\"total\":%d},\
+\"patterns\":",
+  config.stripName,
+  config.groupName,
+  GIT_CURRENT_VERSION,
+  isPowerOn(),
+  mac,
+  patternManager.getSelectedPattern(),
+  config.brightness,
+  millis(),
+  patternManager.getUsedBlocks(),
+  patternManager.getAvailableBlocks(),
+  patternManager.getTotalBlocks());
+
+  int remaining = 2000 - n;
+  char * ptr = buf + n;
+  int patternBufferLength = patternManager.serializePatterns(ptr,remaining);
+  ptr[patternBufferLength] = '}';
+  ptr[patternBufferLength+1] = 0;
+
+  sendHttp(client,200,"OK","application/json",buf);
+}
+
+/*
 void sendStatus(WiFiClient * client) {
   StaticJsonBuffer<2000> jsonBuffer;
 
@@ -253,23 +315,42 @@ void sendStatus(WiFiClient * client) {
 
   sendHttp(client,200,"OK",root);
 }
+*/
 
 void patternTick() {
   byte brightness = (255*config.brightness)/100;
   strip.setBrightness(brightness);
   bool hasNewFrame = patternManager.loadNextFrame(strip);
-  if (hasNewFrame) strip.show();
+  if (hasNewFrame) {
+    yield();
+    ESP.wdtFeed();
+    strip.show();
+  }
+  /*
+  if (hasNewFrame) {
+    Serial.println("end");
+    Serial.flush();
+  }
+  */
 }
 
 void nextMode() {
   patternManager.showTestPattern(false);
+
+  if(config.selectedPattern+1 >= patternManager.getPatternCount()) {
+    selectPattern(0);
+  } else {
+    selectPattern(patternManager.getSelectedPattern()+1);
+  }
+}
+
+void nextModeWithToggle() {
   if (!isPowerOn()) {
     toggleStrip(true);
   } else if(config.selectedPattern+1 >= patternManager.getPatternCount()) {
     selectPattern(0);
     toggleStrip(false);
   } else {
-    selectPattern(patternManager.getSelectedPattern()+1);
   }
 }
 
@@ -329,18 +410,78 @@ void indicatorTick() {
 }
 
 int powerWasOn = true;
+int rollOver = 0;
+long lastSwitch = 0;
 void tick() {
+  ESP.wdtFeed();
   yield();
+  long currentTime = millis();
+  if (config.cycle != 0) {
+    long rollOverTime = 1000*config.cycle;
+    if (currentTime - lastSwitch > rollOverTime) {
+      lastSwitch = currentTime;
+      if (!patternManager.isTestPatternActive()) {
+        nextMode();
+      }
+    }
+  }
+
   
   handleSerial();
   if (isPowerOn()) {
+    setLed(0);
     powerWasOn = true;
     patternTick();
   } else if (powerWasOn == true) {
+    setLed(255);
     fillStrip(0,0,0);
     strip.show();
     powerWasOn = false;
   }
+
+  ledTick();
+  buttonTick();
+}
+
+void buttonTick() {
+  long currentTime = millis();
+  long downTime = currentTime - buttonDown;
+  if (digitalRead(BUTTON) == BUTTON_DOWN) {
+    if (buttonDown == 0) {
+      buttonDown = currentTime;
+    } else if (buttonDown > 0 && downTime > 2000) {
+      if (isPowerOn()) toggleStrip(false);
+      buttonDown = -1;
+    } 
+  } else {
+    if (buttonDown > 0) {
+      if (downTime > 500) {
+        //long press
+      } else {
+        //short press
+        if (!isPowerOn()) {
+          toggleStrip(true);
+        } else {
+          nextMode();
+        }
+      }
+      buttonDown = -1;
+    } else if (buttonDown == -1) {
+      buttonDown = -currentTime; //debounce the button
+    } else if (buttonDown < 0) {
+      if (currentTime+buttonDown > 100) buttonDown = 0; //reset the button debounce
+    }
+  }
+}
+
+void setLed(byte n) {
+  ledValue = n;
+}
+
+byte ledPhase = 0;
+void ledTick() {
+  ledPhase += 85;
+  digitalWrite(BUTTON_LED,ledValue > ledPhase);
 }
 
 void handleUdpPacket(IPAddress ip, byte * buf, int len) {
@@ -457,9 +598,7 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
 
   int val;
   if (strcmp(urlval,"/") == 0) {
-    toggleStrip(!isPowerOn());
-
-    char content[] = "<html><head><meta http-equiv='refresh' content='5'/></head><body>Refreshing page..</body></html>";
+    char content[] = "<html><head><meta name=viewport content=\"width=device-width, initial-scale=1\"></head><body><a href='/power/on'>Power On</a><br/><a href='/power/off'>Power Off</a></br><a href='/connect'>Configure WiFi</a></body></html>";
     sendHttp(&client,200,"OK","text/html",content);
   } else if (strcmp(urlval,"/description.xml") == 0) {
     SSDP.schema(client);
@@ -485,6 +624,12 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
     memcpy(config.groupName,root["name"],strlen(root["name"])+1);
     saveConfiguration();
     sendStatus(&client);
+  } else if (strcmp(urlval,"/config/cycle") == 0) {
+    bool success = getInteger(buf,"value",&val);
+    if (!success) return false;
+    config.cycle = val;
+    saveConfiguration();
+    sendOk(&client);
   } else if (strcmp(urlval,"/power/on") == 0) {
     toggleStrip(true);
     sendOk(&client);
@@ -591,10 +736,10 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
     char content[] = "Not Found";
     sendHttp(&client,404,"Not Found","text/plain",content);
   }
+  Serial.flush();
   return true;
 }
 
-char buf[2000];
 void handleWebClient(WiFiClient & client) {
   int n = readUntil(&client,buf,"\r\n\r\n",1000);
   if (n == 0) {
@@ -610,7 +755,7 @@ void handleWebClient(WiFiClient & client) {
 
   int maxWait = 2000;
   while(client.connected() && maxWait--) {
-    delay(1);
+    tick();
   }
 
   client.stop();
@@ -698,18 +843,18 @@ void loop() {
     while(accessPoint || WiFi.status() == WL_CONNECTED) {
       if (disconnect) return forgetNetwork();
       if (reconnect) {
+        WiFi.softAPdisconnect();
+        WiFi.disconnect();
         Serial.println("reconnecting...");
         return;
       }
 
       tick();
-      delay(1);
 
       WiFiClient client = server.available();
       if (!client) continue;
       handleWebClient(client);
     }
-    Serial.println("disconnected from wifi");
   }
 }
 /*
