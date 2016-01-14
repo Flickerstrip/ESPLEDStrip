@@ -36,10 +36,16 @@ else
     blue "Building project"
     (cd $ROOT; make -B)
 
-    blue "Creating release"
-    ID=`curl https://api.github.com/repos/$REPO/releases -H "Authorization: token `cat $ROOT/credentials.txt`" --data '{"tag_name":"'$RELEASE'","name":"'$RELEASE'","body":"$BODY","draft":false,"prerelease":false}' | perl -nle 'print "$1" if (/"id":.?([0-9]*?),/)' | head -n 1`
+    # Generate json body
+    DATA_FILE=/tmp/publishreleasedata.json
+    echo -n '{"tag_name":"'$RELEASE'","name":"'$RELEASE'","body":' > $DATA_FILE
+    cat $RELEASE_LOG | python -c 'import json,sys;print(json.dumps(sys.stdin.read()))' | tr -d '\n' >> $DATA_FILE
+    echo -n ',"draft":false,"prerelease":false}' >> $DATA_FILE
 
-    blue "Uploadin binary"
+    blue "Creating release"
+    ID=$(curl https://api.github.com/repos/$REPO/releases -H "Authorization: token `cat $ROOT/credentials.txt`" --data @"$DATA_FILE" | perl -nle 'print "$1" if (/"id":.?([0-9]*?),/)' | head -n 1)
+
+    blue "Uploading binary"
     uploadFile $ROOT/releases/$RELEASE.bin
 fi
 
