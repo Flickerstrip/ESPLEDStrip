@@ -9,6 +9,9 @@
 #include <WiFiServer.h>
 #include <ESP8266WebServer.h>
 
+#include <ESP8266WebServer.h>
+#include <ESP8266HTTPUpdateServer.h>
+
 #include "util.h"
 #include <ArduinoJson.h>
 #include <Adafruit_NeoPixel.h>
@@ -36,6 +39,7 @@
 //#define LED_STRIP 14
 
 //New new pinout
+/*
 #define SPI_SCK 13
 #define SPI_MOSI 12
 #define SPI_MISO 14
@@ -43,6 +47,19 @@
 #define LED_STRIP 5
 #define BUTTON_LED 16
 #define BUTTON 15
+*/
+
+//New new newer pinout
+#define SPI_SCK 13
+#define SPI_MOSI 12
+#define SPI_MISO 14
+#define MEM_CS 4
+#define LED_STRIP 5
+#define BUTTON_LED 15
+#define BUTTON 16
+
+#define BUTTON_LED_ON 1
+#define BUTTON_LED_OFF 0
 
 uint16_t stripLength = 150;
 FlashMemory flash(SPI_SCK,SPI_MOSI,SPI_MISO,MEM_CS);
@@ -102,19 +119,25 @@ int indicatorLength = 0;
 byte indicatorColor[] = {50,0,0};
 unsigned long lastFrameTime;
 bool doIndicator = false;
+bool accessPoint = false;
+bool ignoreConfiguredNetwork = false;
+
+byte heldTriggered = 0;
 /////////////
 
 void setup() {
   Serial.begin(115200);
+  pinMode(LED_STRIP,OUTPUT);
+  pinMode(BUTTON_LED,OUTPUT);
+  pinMode(BUTTON,INPUT);
   delay(10);
+
+  handleStartupHold();
+
   strip.begin();
   strip.show();
 
   createMacString();
-
-  pinMode(LED_STRIP,OUTPUT);
-  pinMode(BUTTON_LED,OUTPUT);
-  pinMode(BUTTON,INPUT);
 
   Serial.println("\n\n");
 
@@ -157,6 +180,86 @@ void startupPattern() {
   fillStrip(25,10,10);
   strip.show();
   delay(300);
+}
+
+void handleStartupHold() {
+  long start = millis();
+  digitalWrite(BUTTON_LED,BUTTON_LED_OFF);
+  while(digitalRead(BUTTON) == BUTTON_DOWN) {
+    long duration = millis() - start;
+    if (heldTriggered == 0 && duration > 2000) {
+      blinkCount(2,100,100);
+      heldTriggered++;
+    }
+
+    if (heldTriggered == 1 && duration > 7000) {
+      blinkCount(4,100,100);
+      heldTriggered++;
+    }
+
+    if (heldTriggered == 2 && duration > 15000) {
+      blinkCount(10,50,50);
+      digitalWrite(BUTTON_LED,BUTTON_LED_ON);
+      heldTriggered++;
+      break;
+    }
+
+    delay(100);
+  }
+
+  if (heldTriggered == 1) {
+    //Ignore the configured network for this boot (and set up in access point mode)
+    ignoreConfiguredNetwork = true;
+  }
+
+  if (heldTriggered == 2) {
+    factoryReset();
+  }
+
+  if (heldTriggered == 3) {
+    //emergency firmware mode
+    startEmergencyFirmwareMode();
+  }
+}
+
+//This emergency code is used to recover if for some reason a firmware update has a bug in it
+//USE EXTREME CARE WHEN EDITING THIS FUNCTION.
+//AVOID USING NON-LIBRARY FUNCTION CALLS
+void startEmergencyFirmwareMode() {
+  ESP8266WebServer httpServer(80);
+  ESP8266HTTPUpdateServer httpUpdater;
+
+  IPAddress ip = IPAddress(192, 168, 1, 1);
+  IPAddress netmask = IPAddress(255, 255, 255, 0);
+
+  WiFi.disconnect();
+  WiFi.mode(WIFI_AP);
+  WiFi.softAPConfig(ip,ip,netmask);
+  WiFi.softAP("Flickerstrip");
+
+  Serial.print("Created access point: Flickerstrip");
+  Serial.print(" [");
+  Serial.print(WiFi.softAPIP());
+  Serial.println("]");
+
+  httpUpdater.setup(&httpServer);
+  httpServer.begin();
+
+  Serial.printf("Booted into emergency firmware mode and ready to load firmware");
+
+  while(true) {
+    httpServer.handleClient();
+    delay(1);
+  }
+}
+
+void blinkCount(byte count, int on, int off) {
+  for(int i=0; i<count; i++) {
+    digitalWrite(BUTTON_LED,BUTTON_LED_ON);
+    delay(on);
+    digitalWrite(BUTTON_LED,BUTTON_LED_OFF);
+    delay(off);
+  }
 }
 
 void fillStrip(byte r, byte g, byte b) {
@@ -267,6 +370,7 @@ void sendStatus(WiFiClient * client) {
 \"mac\":\"%s\",\
 \"selectedPattern\":%d,\
 \"brightness\":%d,\
+\"cycle\":%d,\
 \"uptime\":%d,\
 \"memory\":{\"used\":%d,\"free\":%d,\"total\":%d},\
 \"patterns\":",
@@ -277,6 +381,7 @@ void sendStatus(WiFiClient * client) {
   mac,
   patternManager.getSelectedPattern(),
   config.brightness,
+  config.cycle,
   millis(),
   patternManager.getUsedBlocks(),
   patternManager.getAvailableBlocks(),
@@ -776,7 +881,6 @@ void startSSDP() {
   SSDP.begin();
 }
 
-bool accessPoint = false;
 bool doConnect() {
   Serial.print("Connecting to ssid: ");
   Serial.println(config.ssid);
@@ -829,7 +933,7 @@ void loop() {
   reconnect = false;
   while(true) {
     int attempts = 0;
-    while(attempts <= 3 && strlen(config.ssid)) {
+    while(!ignoreConfiguredNetwork && attempts <= 3 && strlen(config.ssid)) {
       attempts++;
       if (doConnect()) break;
     }
