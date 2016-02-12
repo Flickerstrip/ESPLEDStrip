@@ -8,6 +8,7 @@
 #include <ESP8266SSDP.h>
 #include <WiFiServer.h>
 #include <ESP8266WebServer.h>
+#include <WiFiUdp.h>
 
 #include <ESP8266WebServer.h>
 #include <ESP8266HTTPUpdateServer.h>
@@ -24,58 +25,47 @@
 
 #include "networkutil.h"
 
-//Old pinout
-//#define SPI_SCK 5
-//#define SPI_MOSI 14
-//#define SPI_MISO 16
-//#define MEM_CS 4
-//#define LED_STRIP 13
+#define HARDWARE_VERSION fl_200
 
-//New pinout
-//#define SPI_SCK 12
-//#define SPI_MOSI 16
-//#define SPI_MISO 13
-//#define MEM_CS 4
-//#define LED_STRIP 14
+#if HARDWARE_VERSION==fl_100a
+  #define SPI_SCK 13
+  #define SPI_MOSI 12
+  #define SPI_MISO 14
+  #define MEM_CS 4
+  #define LED_STRIP 5
+  #define BUTTON_LED 16
+  #define BUTTON 15
+#endif
 
-//New new pinout
-/*
-#define SPI_SCK 13
-#define SPI_MOSI 12
-#define SPI_MISO 14
-#define MEM_CS 4
-#define LED_STRIP 5
-#define BUTTON_LED 16
-#define BUTTON 15
-*/
-
-//New new newer pinout
-#define SPI_SCK 13
-#define SPI_MOSI 12
-#define SPI_MISO 14
-#define MEM_CS 4
-#define LED_STRIP 5
-#define BUTTON_LED 15
-#define BUTTON 16
+#if HARDWARE_VERSION==fl_200
+  #define SPI_SCK 13
+  #define SPI_MOSI 12
+  #define SPI_MISO 14
+  #define MEM_CS 4
+  #define LED_STRIP 5
+  #define BUTTON_LED 15
+  #define BUTTON 16
+#endif
 
 #define BUTTON_LED_ON 1
 #define BUTTON_LED_OFF 0
 
-uint16_t stripLength = 150;
+#define MAX_STRIP_LENGTH 750
 FlashMemory flash(SPI_SCK,SPI_MOSI,SPI_MISO,MEM_CS);
-Adafruit_NeoPixel strip(stripLength, LED_STRIP, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip(1, LED_STRIP, NEO_GRB + NEO_KHZ800);
 PatternManager patternManager(&flash);
 //CaptivePortalConfigurator cpc("esp8266confignetwork");
 char defaultNetworkName[] = "Flickerstrip";
 WiFiServer server(80);
+WiFiUDP udp;
 char buf[2000];
 
 char mac[20];
 bool disconnect = false;
 bool reconnect = false;
-byte ledValue = 0;
 long buttonDown = -1;
 byte clicksTriggered = 0;
+bool connecting = false;
 
 const byte BUTTON_UP = 1;
 const byte BUTTON_DOWN = 0;
@@ -93,14 +83,13 @@ struct Configuration {
   byte brightness;
   byte flags;
   int cycle;
+  int stripLength;
   char version[20];
 };
 
-const byte FLAG_CONFIGURED = 7;
-const byte FLAG_POWER = 6;
+bool powerOn = true;
 
-const byte FLAG_POWER_ON = 1;
-const byte FLAG_POWER_OFF = 0;
+const byte FLAG_CONFIGURED = 7;
 
 const byte FLAG_CONFIGURED_CONFIGURED = 0;
 const byte FLAG_CONFIGURED_UNCONFIGURED = 1;
@@ -114,11 +103,6 @@ struct PacketStructure {
 Configuration config;
 
 /////////////
-int indicatorFrame = 0;
-int indicatorLength = 0;
-byte indicatorColor[] = {50,0,0};
-unsigned long lastFrameTime;
-bool doIndicator = false;
 bool accessPoint = false;
 bool ignoreConfiguredNetwork = false;
 
@@ -130,7 +114,8 @@ void setup() {
   pinMode(LED_STRIP,OUTPUT);
   pinMode(BUTTON_LED,OUTPUT);
   pinMode(BUTTON,INPUT);
-  delay(10);
+
+  buttonFix();
 
   handleStartupHold();
 
@@ -152,6 +137,9 @@ void setup() {
     saveConfiguration();
   }
 
+  if (config.stripLength > MAX_STRIP_LENGTH) config.stripLength = MAX_STRIP_LENGTH;
+  strip.updateLength(config.stripLength);
+
   if (strcmp(config.version,GIT_CURRENT_VERSION) != 0) {
     Serial.println("Firmware version updated!");
     //TODO decide what we want to do here... run some kinda patcher?
@@ -165,6 +153,12 @@ void setup() {
     factoryReset();
   }
   patternManager.selectPattern(config.selectedPattern);
+}
+
+void buttonFix() {
+  pinMode(BUTTON,OUTPUT); //Required for dan's flickerstrip.. TODO what's going on here?
+  digitalWrite(BUTTON,1);
+  pinMode(BUTTON,INPUT);
 }
 
 void createMacString() {
@@ -204,6 +198,7 @@ void handleStartupHold() {
       break;
     }
 
+    buttonFix();
     delay(100);
   }
 
@@ -263,7 +258,7 @@ void blinkCount(byte count, int on, int off) {
 }
 
 void fillStrip(byte r, byte g, byte b) {
-  for (int i=0; i<stripLength; i++) {
+  for (int i=0; i<config.stripLength; i++) {
     strip.setPixelColor(i,r,g,b);
   }
 }
@@ -287,8 +282,8 @@ void loadDefaultConfiguration() {
   config.selectedPattern = 0;
   config.brightness = 10;
   config.cycle = 0;
-  config.flags = (FLAG_CONFIGURED_CONFIGURED << FLAG_CONFIGURED) | //Set configured bit
-                 (FLAG_POWER_ON << FLAG_POWER);
+  config.stripLength = 150;
+  config.flags = (FLAG_CONFIGURED_CONFIGURED << FLAG_CONFIGURED); //Set configured bit
   memcpy(config.version,GIT_CURRENT_VERSION,strlen(GIT_CURRENT_VERSION)+1);
 }
 
@@ -370,6 +365,7 @@ void sendStatus(WiFiClient * client) {
 \"mac\":\"%s\",\
 \"selectedPattern\":%d,\
 \"brightness\":%d,\
+\"length\":%d,\
 \"cycle\":%d,\
 \"uptime\":%d,\
 \"memory\":{\"used\":%d,\"free\":%d,\"total\":%d},\
@@ -381,6 +377,7 @@ void sendStatus(WiFiClient * client) {
   mac,
   patternManager.getSelectedPattern(),
   config.brightness,
+  config.stripLength,
   config.cycle,
   millis(),
   patternManager.getUsedBlocks(),
@@ -460,58 +457,11 @@ void nextModeWithToggle() {
 }
 
 bool isPowerOn() {
-  return (config.flags >> FLAG_POWER) & 1 == FLAG_POWER_ON;
+  return powerOn;
 }
 
 void toggleStrip(bool on) {
-  if (on) {
-    config.flags |= (1 << FLAG_POWER);
-  } else {
-    config.flags &= ~(1 << FLAG_POWER);
-  }
-  saveConfiguration();
-}
-
-void indicateGreenFast() {
-  doIndicator = true;
-  indicatorColor[0] = 0;
-  indicatorColor[1] = 50;
-  indicatorColor[2] = 0;
-  lastFrameTime = 0;
-  indicatorFrame = 0;
-  indicatorLength = 20;
-}
-
-void indicateBlueSlow() {
-  doIndicator = true;
-  indicatorColor[0] = 0;
-  indicatorColor[1] = 0;
-  indicatorColor[2] = 50;
-  lastFrameTime = 0;
-  indicatorFrame = 0;
-  indicatorLength = 60;
-}
-
-void indicateStop() {
-  doIndicator = false;
-}
-
-void indicatorTick() {
-  if (millis() - lastFrameTime < 1000/30) return;
-  lastFrameTime = millis();
-
-  int halfLength = indicatorLength >> 1;
-  int phase = (indicatorFrame > halfLength) ? (indicatorLength - indicatorFrame) : indicatorFrame;
-  float brightness = (float)phase/(float)halfLength;
-
-  byte r = brightness*(indicatorColor[0]>>1) + (indicatorColor[0]>>1);
-  byte g = brightness*(indicatorColor[1]>>1) + (indicatorColor[1]>>1);
-  byte b = brightness*(indicatorColor[2]>>1) + (indicatorColor[2]>>1);
-  fillStrip(r,g,b);
-  strip.show();
-
-  indicatorFrame ++;
-  if (indicatorFrame > indicatorLength) indicatorFrame = 0;
+  powerOn = on;
 }
 
 int powerWasOn = true;
@@ -534,18 +484,24 @@ void tick() {
   
   handleSerial();
   if (isPowerOn()) {
-    setLed(0);
     powerWasOn = true;
     patternTick();
   } else if (powerWasOn == true) {
-    setLed(255);
     fillStrip(0,0,0);
     strip.show();
     powerWasOn = false;
   }
 
-  ledTick();
+  if (connecting) {
+    setPulse(true); 
+  } else if (isPowerOn()) {
+    setLed(0);
+  } else {
+    setLed(50);
+  }
+
   buttonTick();
+  ledTick();
 }
 
 void buttonTick() {
@@ -555,6 +511,7 @@ void buttonTick() {
     if (buttonDown == 0) {
       buttonDown = currentTime;
     } else if (buttonDown > 0 && downTime > 2000) {
+      //very long press
       if (isPowerOn()) toggleStrip(false);
       buttonDown = -1;
     } 
@@ -577,22 +534,60 @@ void buttonTick() {
       if (currentTime+buttonDown > 100) buttonDown = 0; //reset the button debounce
     }
   }
+  buttonFix();
+}
+
+bool ledPulsing = false;
+void setPulse(bool doPulse) {
+  ledPulsing = doPulse;
 }
 
 void setLed(byte n) {
-  ledValue = n;
+  setPulse(false);
+  setLedImpl(n);
 }
 
-byte ledPhase = 0;
+void setLedImpl(byte n) {
+  analogWrite(BUTTON_LED,((int)n) << 2);
+}
+
+int pulseRate = 2000;
+int pulseMin = 50;
+int pulseMax = 255;
+int tickSpacing = 50;
+long lastTick = 0;
 void ledTick() {
-  ledPhase += 85;
-  digitalWrite(BUTTON_LED,ledValue > ledPhase);
+  if (!ledPulsing) return;
+  int pulseRange = pulseMax - pulseMin;
+  long ctime = millis();
+  if (ctime - lastTick > tickSpacing) {
+    lastTick = ctime;
+    if (ctime % pulseRate < pulseRate/2) {
+      setLedImpl(pulseMin + 2*((ctime % (pulseRate/2))*pulseRange)/pulseRate);
+    } else {
+      setLedImpl(pulseMax - 2*((ctime % (pulseRate/2))*pulseRange)/pulseRate);
+    }
+  }
 }
 
-void handleUdpPacket(IPAddress ip, byte * buf, int len) {
-  char * charbuf = (char*)buf;
+void handleUdpPacket(char * charbuf, int len) {
   if (strcmp(charbuf,"mode") == 0) {
     nextMode();
+  }
+  if (strcmp(charbuf,"sync") == 0) {
+    patternManager.syncToFrame(0);
+  }
+
+  if (strcmp(charbuf,"on") == 0) {
+    toggleStrip(true);
+  }
+
+  if (strcmp(charbuf,"off") == 0) {
+    toggleStrip(false);
+  }
+
+  if (strcmp(charbuf,"pattern") == 0) {
+    patternManager.syncToFrame(0);
   }
 }
 
@@ -734,6 +729,16 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
     if (!success) return false;
     config.cycle = val;
     saveConfiguration();
+    sendOk(&client);
+  } else if (strcmp(urlval,"/config/length") == 0) {
+    bool success = getInteger(buf,"value",&val);
+    if (!success) return false;
+    fillStrip(0,0,0);
+    strip.show();
+    config.stripLength = val;
+    saveConfiguration();
+
+    strip.updateLength(config.stripLength);
     sendOk(&client);
   } else if (strcmp(urlval,"/power/on") == 0) {
     toggleStrip(true);
@@ -889,7 +894,9 @@ bool doConnect() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(config.ssid, config.password);
 
+  connecting = true;
   while (WiFi.status() == WL_DISCONNECTED) tick();
+  connecting = false;
 
   if (WiFi.status() != WL_CONNECTED) return false;
   Serial.print("Connected with IP:");
@@ -925,10 +932,6 @@ bool createAccessPoint() {
 void loop() {
   WiFiClient client = server.available();
 
-  //char ssid[] = "Steven's Castle";
-  //char pass[] = "Gizmo3151";
-  //memcpy(config.ssid,ssid,strlen(ssid)+1);
-  //memcpy(config.password,pass,strlen(pass)+1);
   disconnect = false;
   reconnect = false;
   while(true) {
@@ -943,6 +946,8 @@ void loop() {
 
     startSSDP();
     server.begin();
+    //UDP seems to be unstable.. TODO investigate why
+    //udp.begin(2836);
 
     while(accessPoint || WiFi.status() == WL_CONNECTED) {
       if (disconnect) return forgetNetwork();
@@ -956,117 +961,35 @@ void loop() {
       tick();
 
       WiFiClient client = server.available();
-      if (!client) continue;
-      handleWebClient(client);
+      if (client) {
+        handleWebClient(client);
+      }
+
+      /*
+      int udpLength = udp.parsePacket();
+      if (udpLength > 0) {
+        Serial.print("udp packet length");
+        Serial.println(udpLength);
+        int readLength = udp.read(buf, 2000);
+        //buf[readLength] = 0;
+        //handleUdpPacket((byte*)buf,readLength);
+      }
+      */
     }
   }
 }
-/*
-  while(true) {
-    if (timedout || strlen(config.ssid) == 0) {
-      //Handle configuration AP using a Captive Portal
-      cpc.begin();
-      //indicateBlueSlow();
-      while(!cpc.hasConfiguration()) {
-        cpc.tick();
-        handleConnectedState();
-        tick();
-        delay(1);
-      }
-      //indicateStop();
 
-      cpc.getSSID().toCharArray(config.ssid,50);
-      cpc.getPassword().toCharArray(config.password,50);
 
-      saveConfiguration();
-      timedout = false;
+//Old pinout
+//#define SPI_SCK 5
+//#define SPI_MOSI 14
+//#define SPI_MISO 16
+//#define MEM_CS 4
+//#define LED_STRIP 13
 
-      Serial.print("Configured via captive portal: ");
-      Serial.println(cpc.getSSID());
-    } else {
-      if (debug) Serial.print("Connecting to ");
-      if (debug) Serial.println(config.ssid);
-
-      WiFi.mode(WIFI_STA);
-      WiFi.begin(config.ssid, config.password);
-
-      unsigned long start = millis();
-      unsigned long timeoutDuration = 15000;
-
-      indicateGreenFast();
-      while (WiFi.status() != WL_CONNECTED) {
-        if (millis() - start >= timeoutDuration) break;
-        delay(1);
-        tick();
-      }
-      indicateStop();
-
-      if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("Timed out!");
-        timedout = true;
-        continue;
-      }
-
-      timedout = false;
-
-      if (debug) Serial.print("Connected with IP:");
-      if (debug) Serial.println(WiFi.localIP());
-
-      disconnect = false;
-      webserver.on("/", HTTP_GET, [](){
-        webserver.sendHeader("Connection", "close");
-        webserver.sendHeader("Access-Control-Allow-Origin", "*");
-        webserver.send(200, "text/html", "<form method='POST' action='/update' enctype='multipart/form-data'><input type='file' name='update'><input type='submit' value='Update'></form>");
-
-      });
-      webserver.onFileUpload([](){
-        if(webserver.uri() != "/update") return;
-        HTTPUpload& upload = webserver.upload();
-        if(upload.status == UPLOAD_FILE_START){
-          Serial.setDebugOutput(true);
-          WiFiUDP::stopAll();
-          Serial.printf("Update: %s\n", upload.filename.c_str());
-          uint32_t maxSketchSpace = (ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000;
-          if(!Update.begin(maxSketchSpace)) { //start with max available size
-            Update.printError(Serial);
-          }
-        } else if(upload.status == UPLOAD_FILE_WRITE){
-          if(Update.write(upload.buf, upload.currentSize) != upload.currentSize){
-            Update.printError(Serial);
-          }
-        } else if(upload.status == UPLOAD_FILE_END){
-          if(Update.end(true)){ //true to set the size to the current progress
-            Serial.printf("Update Success: %u\nRebooting...\n", upload.totalSize);
-          } else {
-            Update.printError(Serial);
-          }
-          Serial.setDebugOutput(false);
-        }
-        yield();
-      });
-      webserver.on("/update", HTTP_POST, [](){
-        webserver.sendHeader("Connection", "close");
-        webserver.sendHeader("Access-Control-Allow-Origin", "*");
-        webserver.send(200, "text/plain", (Update.hasError())?"FAIL":"OK");
-        ESP.restart();
-      });
-      webserver.begin();
-      while(WiFi.status() == WL_CONNECTED) {
-        handleConnectedState();
-        webserver.handleClient();
-        delay(1);
-
-        if (disconnect) {
-          WiFi.disconnect();
-          config.ssid[0] = 0;
-          config.password[0] = 0;
-          saveConfiguration();
-          break;
-        }
-      }
-      network.stop();
-      Serial.println("Disconnected from AP");
-    }
-  }
-}
-*/
+//New pinout
+//#define SPI_SCK 12
+//#define SPI_MOSI 16
+//#define SPI_MISO 13
+//#define MEM_CS 4
+//#define LED_STRIP 14

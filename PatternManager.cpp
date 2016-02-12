@@ -25,25 +25,46 @@ void PatternManager::resetPatternsToDefault() {
   this->clearPatterns();
 
   PatternMetadata newpat;
-  char foo[] = "TwoBlink";
-  memcpy(newpat.name, foo, strlen(foo)+1);
-  newpat.len = 10*3*2;
-  newpat.frames = 2;
+  char patternName[] = "Default";
+  memcpy(newpat.name, patternName, strlen(patternName)+1);
+  newpat.len = 1*3*50;
+  newpat.frames = 50;
   newpat.flags = 0;
-  newpat.fps = 1;
+  newpat.fps = 10;
+  int led = 0;
   for (int i=0; i<10; i++) {
-    this->buf[i*3+0] = 255;
-    this->buf[i*3+1] = 255;
-    this->buf[i*3+2] = 255;
+    this->buf[led*3+0] = i*25;
+    this->buf[led*3+1] = 0;
+    this->buf[led*3+2] = 0;
+    led++;
   }
   for (int i=0; i<10; i++) {
-    this->buf[30+i*3+0] = 255;
-    this->buf[30+i*3+1] = 0;
-    this->buf[30+i*3+2] = 0;
+    this->buf[led*3+0] = 250-i*25;
+    this->buf[led*3+1] = i*25;
+    this->buf[led*3+2] = 0;
+    led++;
+  }
+  for (int i=0; i<10; i++) {
+    this->buf[led*3+0] = 0;
+    this->buf[led*3+1] = 250-i*25;
+    this->buf[led*3+2] = i*25;
+    led++;
+  }
+  for (int i=0; i<10; i++) {
+    this->buf[led*3+0] = i*25;
+    this->buf[led*3+1] = i*25;
+    this->buf[led*3+2] = 250;
+    led++;
+  }
+  for (int i=0; i<10; i++) {
+    this->buf[led*3+0] = 250-i*25;
+    this->buf[led*3+1] = 250-i*25;
+    this->buf[led*3+2] = 250-i*25;
+    led++;
   }
 
   byte patindex = this->saveLedPatternMetadata(&newpat);
-  this->saveLedPatternBody(patindex,0,(byte*)this->buf,10*3*2);
+  this->saveLedPatternBody(patindex,0,(byte*)this->buf,newpat.len);
 }
 
 void PatternManager::clearPatterns() {
@@ -183,6 +204,11 @@ bool PatternManager::isTestPatternActive() {
 
 PatternManager::PatternMetadata * PatternManager::getActivePattern() {
   return &this->patterns[this->getSelectedPattern()];
+}
+
+void PatternManager::syncToFrame(int frame) {
+  this->currentFrame = frame;
+  this->lastFrameTime = 0;
 }
 
 bool PatternManager::loadNextFrame(Adafruit_NeoPixel &strip) {

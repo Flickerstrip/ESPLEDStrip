@@ -49,6 +49,7 @@ public:
   bool isTestPatternActive();
   PatternMetadata * getActivePattern();
 
+  void syncToFrame(int frame);
   bool loadNextFrame(Adafruit_NeoPixel &strip);
   int serializePatterns(char * buf, int len);
   void jsonPatterns(JsonArray& json);
