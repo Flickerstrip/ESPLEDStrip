@@ -76,13 +76,16 @@ void PatternManager::clearPatterns() {
 }
 
 void PatternManager::selectPattern(byte n) {
+    if (this->patternCount == 0) {
+      this->selectedPattern = -1;
+      return;
+    }
+
     if (n >= this->patternCount) return;
 
     this->selectedPattern = n;
 
     PatternMetadata * pat = &this->patterns[n];
-    //Serial.print("Selected pattern: ");
-    //Serial.println(pat->name);
     
     this->currentFrame = 0;
     this->lastFrameTime = 0;
@@ -104,6 +107,7 @@ void PatternManager::deletePattern(byte n) {
     selectPattern(this->selectedPattern-1);
   }
 
+  if (this->patternCount == 0) this->selectedPattern = -1;
 }
 
 uint32_t PatternManager::findInsertLocation(uint32_t len) {
@@ -212,6 +216,13 @@ void PatternManager::syncToFrame(int frame) {
 }
 
 bool PatternManager::loadNextFrame(Adafruit_NeoPixel &strip) {
+  if (this->patternCount == 0) {
+    for (int i=0; i<strip.numPixels(); i++) { //clear strip
+      strip.setPixelColor(i,0,0,0);
+    }
+    return true;
+  }
+
   PatternMetadata * active = this->getActivePattern();
   if (this->testPatternActive) active = &this->testPattern;
   if (millis() - this->lastFrameTime < 1000  / active->fps) return false; //wait for a frame based on fps

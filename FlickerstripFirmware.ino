@@ -149,9 +149,6 @@ void setup() {
   patternManager.loadPatterns();
   Serial.print("Loaded patterns: ");
   Serial.println(patternManager.getPatternCount());
-  if (patternManager.getPatternCount() == 0) {
-    factoryReset();
-  }
   patternManager.selectPattern(config.selectedPattern);
 }
 
@@ -428,12 +425,6 @@ void patternTick() {
     ESP.wdtFeed();
     strip.show();
   }
-  /*
-  if (hasNewFrame) {
-    Serial.println("end");
-    Serial.flush();
-  }
-  */
 }
 
 void nextMode() {
@@ -481,7 +472,6 @@ void tick() {
     }
   }
 
-  
   handleSerial();
   if (isPowerOn()) {
     powerWasOn = true;
