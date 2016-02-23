@@ -9,7 +9,7 @@ LEDStrip::LEDStrip() {
 void LEDStrip::begin(const uint8_t pin) {
   this->ledBuffer = new CRGB[this->length];
 
-  this->controller = &FastLED.addLeds<WS2812B, LED_STRIP, RGB>(this->ledBuffer, this->length);
+  this->controller = &FastLED.addLeds<WS2812B, LED_STRIP, GRB>(this->ledBuffer, this->length);
 }
 
 void LEDStrip::setLength(int length) {

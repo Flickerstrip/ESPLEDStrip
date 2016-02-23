@@ -222,12 +222,37 @@ bool PatternManager::isTestPatternActive() {
 }
 
 PatternManager::PatternMetadata * PatternManager::getActivePattern() {
+  if (this->testPatternActive) return &this->testPattern;
   return &this->patterns[this->getSelectedPattern()];
 }
 
-void PatternManager::syncToFrame(int frame) {
+void PatternManager::syncToFrame(int frame, int pingDelay) {
   this->currentFrame = frame;
   this->lastFrameTime = 0;
+  long msPerFrame = 1000/this->getActivePattern()->fps;
+  int rewindFrames = pingDelay / msPerFrame;
+  int remaining = pingDelay - msPerFrame * rewindFrames;
+
+  int nextFrameAt = millis() + remaining;
+  this->lastFrameTime = nextFrameAt - msPerFrame;
+
+  Serial.print("pingDelay: ");
+  Serial.println(pingDelay);
+
+  Serial.print("rewind frames: ");
+  Serial.println(rewindFrames);
+
+  Serial.print("remaining ms: ");
+  Serial.println(remaining);
+
+  Serial.print("nextFrameAt: ");
+  Serial.println(nextFrameAt);
+
+  Serial.print("now: ");
+  Serial.println(millis());
+
+  Serial.print("lastFrameTime: ");
+  Serial.println(this->lastFrameTime);
 }
 
 bool PatternManager::loadNextFrame(LEDStrip * strip) {
@@ -239,7 +264,6 @@ bool PatternManager::loadNextFrame(LEDStrip * strip) {
   }
 
   PatternMetadata * active = this->getActivePattern();
-  if (this->testPatternActive) active = &this->testPattern;
   if (millis() - this->lastFrameTime < 1000  / active->fps) return false; //wait for a frame based on fps
   this->lastFrameTime = millis();
   uint32_t width = active->len / (active->frames * 3); //width in pixels of the pattern

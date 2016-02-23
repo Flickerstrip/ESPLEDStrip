@@ -39,7 +39,6 @@ char defaultNetworkName[] = "Flickerstrip";
 WiFiServer server(80);
 WiFiUDP udp;
 char buf[2000];
-StaticJsonBuffer<500> jsonBuffer;
 
 char mac[20];
 bool disconnect = false;
@@ -82,7 +81,9 @@ struct PacketStructure {
 };
 
 long lastSyncReceived;
-long lastSyncSent;;
+long lastSyncSent;
+long lastPingCheck;
+int pingDelay;
 
 Configuration config;
 
@@ -133,6 +134,8 @@ void setup() {
   Serial.println(patternManager.getPatternCount());
   lastSyncReceived = millis() + 3000;
   lastSyncSent = -1;
+  lastPingCheck = -1;
+  pingDelay = 0;
   Serial.println("init select pattern");
   patternManager.selectPattern(config.selectedPattern);
 }
@@ -407,10 +410,8 @@ void nextMode() {
   patternManager.showTestPattern(false);
 
   if(config.selectedPattern+1 >= patternManager.getPatternCount()) {
-    Serial.println("nextmode");
     selectPattern(0);
   } else {
-    Serial.println("nextmode");
     selectPattern(patternManager.getSelectedPattern()+1);
   }
 }
@@ -419,7 +420,6 @@ void nextModeWithToggle() {
   if (!isPowerOn()) {
     toggleStrip(true);
   } else if(config.selectedPattern+1 >= patternManager.getPatternCount()) {
-    Serial.println("nextmodetog");
     selectPattern(0);
     toggleStrip(false);
   } else {
@@ -442,8 +442,6 @@ void tick() {
   yield();
   long currentTime = millis();
   if (config.cycle != 0) {
-    Serial.print("config cylce not zero");
-    Serial.println(config.cycle);
     long rollOverTime = 1000*config.cycle;
     if (currentTime - lastSwitch > rollOverTime) {
       lastSwitch = currentTime;
@@ -472,21 +470,8 @@ void tick() {
   }
 
   syncTick();
-  buttonTick();
+  //buttonTick();
   ledTick();
-}
-
-void syncTick() {
-  long current = millis();
-  if (current - lastSyncReceived > 5000 && current - lastSyncSent > 3000) {
-    IPAddress ip = IPAddress(255, 255, 255, 255);
-    udp.beginPacket(ip, 2836); //NTP requests are to port 123
-    int n = 0;
-    n = snprintf(buf,2000,"{'command':'sync','pattern':'%s','frame':%d}",patternManager.getActivePattern()->name,patternManager.getCurrentFrame());
-    udp.write(buf, n);
-    udp.endPacket();
-    lastSyncSent = current;
-  }
 }
 
 void buttonTick() {
@@ -555,17 +540,69 @@ void ledTick() {
   }
 }
 
+void broadcastUdp(char * buf, int len) {
+    Serial.print("SND: ");
+    buf[len] = 0;
+    Serial.println(buf);
+    IPAddress ip = IPAddress(255, 255, 255, 255);
+    udp.beginPacket(ip, 2836);
+    udp.write(buf, len);
+    udp.endPacket();
+}
+
+void syncTick() {
+  //lastPingCheck = -1;
+  //pingDelay = 0;
+  long current = millis();
+  if (current - lastSyncReceived > 5000 && current - lastSyncSent > 3000) {
+    int n = 0;
+    n = snprintf(buf,2000,"{'command':'sync','pattern':'%s','frame':%d}",patternManager.getActivePattern()->name,patternManager.getCurrentFrame());
+    broadcastUdp(buf,n);
+    lastSyncSent = current;
+    lastPingCheck = -1;
+  }
+
+  if (current - lastSyncReceived < 3000) {
+    lastSyncSent = -1;
+    if (current - lastPingCheck > 10000) {
+      int n = 0;
+      n = snprintf(buf,2000,"{'command':'ping','mac':'%s'}",mac);
+      broadcastUdp(buf,n);
+      lastPingCheck = current;
+    }
+  }
+}
+
 void handleUdpPacket(char * charbuf, int len) {
-  Serial.print("buffer: ");
+  Serial.print("REC: ");
   Serial.println(charbuf);
-  Serial.print("heap: ");
-  Serial.println(ESP.getFreeHeap());
+  StaticJsonBuffer<200> jsonBuffer;
   JsonObject& root = jsonBuffer.parseObject(charbuf);
+
+  if (!root.containsKey("command")) {
+    return;
+  }
 
   if (root.containsKey("group")) {
     if (!strcmp(config.groupName,root["group"])) {
-        Serial.println("ignoring.. incorrect group!");
     }
+  }
+
+  if (strcmp(root["command"],"ping") == 0) {
+    if (lastSyncSent != -1 && millis() - lastSyncSent < 3000) { //we're the master, we should respond to a ping
+      int n = 0;
+      char maccpy[20];
+      strncpy(maccpy,root["mac"],20); //back up the macaddress
+      n = snprintf(buf,2000,"{'command':'pingback','mac':'%s'}",maccpy); //respond with the pinger's mac address
+      broadcastUdp(buf,n);
+    }
+    return; //we destroy the buffer.. so we should return
+  }
+
+  if (strcmp(root["command"],"pingback") == 0 && strcmp(root["mac"],mac) == 0) {
+    pingDelay = (millis() - lastPingCheck)/2;
+    Serial.print("got pingback.. ");
+    Serial.println(pingDelay);
   }
 
   if (strcmp(root["command"],"next") == 0) {
@@ -574,8 +611,6 @@ void handleUdpPacket(char * charbuf, int len) {
   if (strcmp(root["command"],"sync") == 0) {
     int frame = 0;
     if (root.containsKey("frame")) {
-      Serial.print("frame: ");
-      Serial.println(root["frame"].asString());
       frame = root["frame"];
     }
     if (root.containsKey("pattern")) {
@@ -584,7 +619,7 @@ void handleUdpPacket(char * charbuf, int len) {
       }
     }
     lastSyncReceived = millis();
-    patternManager.syncToFrame(frame);
+    patternManager.syncToFrame(frame,pingDelay);
   }
 
   if (strcmp(root["command"],"on") == 0) {
@@ -597,14 +632,10 @@ void handleUdpPacket(char * charbuf, int len) {
 
   if (strcmp(root["command"],"pattern") == 0) {
     if (root.containsKey("index")) {
-      Serial.print("index: ");
-      Serial.println(root["index"].asString());
       int select = root["index"];
       patternManager.selectPattern(select);
     }
     if (root.containsKey("name")) {
-      Serial.print("name: ");
-      Serial.println(root["iname"].asString());
       patternManager.selectPattern(patternManager.getPatternIndexByName(root["name"].asString()));
     }
     patternManager.syncToFrame(0);
@@ -728,6 +759,7 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
     char body[contentLength+1];
     readBytes(client,(char*)&body,contentLength,1000);
     body[contentLength] = 0;
+    StaticJsonBuffer<200> jsonBuffer;
     JsonObject& root = jsonBuffer.parseObject(body);
 
     memcpy(config.stripName,root["name"],strlen(root["name"])+1);
@@ -737,6 +769,7 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
     char body[contentLength+1];
     readBytes(client,(char*)&body,contentLength,1000);
     body[contentLength] = 0;
+    StaticJsonBuffer<200> jsonBuffer;
     JsonObject& root = jsonBuffer.parseObject(body);
 
     memcpy(config.groupName,root["name"],strlen(root["name"])+1);
@@ -808,7 +841,6 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
   } else if (strcmp(urlval,"/pattern/select") == 0) {
     bool success = getInteger(buf,"index",&val);
     if (!success) return false;
-    Serial.println("server called");
     selectPattern(val);
     sendOk(&client);
   } else if (strcmp(urlval,"/pattern/test") == 0 || strcmp(urlval,"/pattern/save") == 0) {
@@ -856,7 +888,6 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
         remaining -= readSize;
         patternManager.saveLedPatternBody(pattern,page++,(byte*)&pagebuffer,0x100);
       }
-      Serial.println("selecting active");
       selectPattern(pattern);
     }
 

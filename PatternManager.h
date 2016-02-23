@@ -51,7 +51,7 @@ public:
   bool isTestPatternActive();
   PatternMetadata * getActivePattern();
 
-  void syncToFrame(int frame);
+  void syncToFrame(int frame,int pingDelay = 0);
   bool loadNextFrame(LEDStrip * strip);
   int serializePatterns(char * buf, int len);
   void jsonPatterns(JsonArray& json);
