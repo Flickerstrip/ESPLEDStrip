@@ -8,7 +8,7 @@
 #include "WProgram.h"
 #endif
 
-#include <Adafruit_NeoPixel.h>
+#include "LEDStrip.h"
 #include <FlashMemory.h>
 #include <ArduinoJson.h>
 
@@ -46,11 +46,13 @@ public:
 
   int getPatternCount();
   int getSelectedPattern();
+  int getCurrentFrame();
+  int getPatternIndexByName(const char * name);
   bool isTestPatternActive();
   PatternMetadata * getActivePattern();
 
   void syncToFrame(int frame);
-  bool loadNextFrame(Adafruit_NeoPixel &strip);
+  bool loadNextFrame(LEDStrip * strip);
   int serializePatterns(char * buf, int len);
   void jsonPatterns(JsonArray& json);
 

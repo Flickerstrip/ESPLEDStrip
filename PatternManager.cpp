@@ -76,6 +76,8 @@ void PatternManager::clearPatterns() {
 }
 
 void PatternManager::selectPattern(byte n) {
+    Serial.print("select pattern called: ");
+    Serial.println(n);
     if (this->patternCount == 0) {
       this->selectedPattern = -1;
       return;
@@ -202,6 +204,19 @@ int PatternManager::getSelectedPattern() {
   return this->selectedPattern;
 }
 
+int PatternManager::getCurrentFrame() {
+  return this->currentFrame;
+}
+
+int PatternManager::getPatternIndexByName(const char * name) {
+  for (int i=0; i<this->patternCount; i++) {
+    if (strcmp(this->patterns[i].name,name) == 0) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 bool PatternManager::isTestPatternActive() {
   return this->testPatternActive;
 }
@@ -215,10 +230,10 @@ void PatternManager::syncToFrame(int frame) {
   this->lastFrameTime = 0;
 }
 
-bool PatternManager::loadNextFrame(Adafruit_NeoPixel &strip) {
+bool PatternManager::loadNextFrame(LEDStrip * strip) {
   if (this->patternCount == 0) {
-    for (int i=0; i<strip.numPixels(); i++) { //clear strip
-      strip.setPixelColor(i,0,0,0);
+    for (int i=0; i<strip->getLength(); i++) { //clear strip
+      strip->setPixel(i,0,0,0);
     }
     return true;
   }
@@ -241,8 +256,8 @@ bool PatternManager::loadNextFrame(Adafruit_NeoPixel &strip) {
   this->flash->readBytes(startAddress,bbuf,width*3);
 //  Serial.println("finished reading pattern");
   
-  for (int i=0; i<strip.numPixels(); i++) {
-    strip.setPixelColor(i,bbuf[(3*(i % width))+0],bbuf[(3*(i % width))+1],bbuf[(3*(i % width))+2]);
+  for (int i=0; i<strip->getLength(); i++) {
+    strip->setPixel(i, bbuf[(3*(i % width))+0],bbuf[(3*(i % width))+1],bbuf[(3*(i % width))+2] );
   }
 //  Serial.println("finished setting pixels");
 

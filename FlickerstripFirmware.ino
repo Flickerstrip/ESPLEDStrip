@@ -1,4 +1,6 @@
 // vim:ts=2 sw=2:
+
+#include "defines.h"
 #include <SoftwareSPI.h>
 #include <ESP8266WiFi.h>
 #include <FlashMemory.h>
@@ -13,9 +15,10 @@
 #include <ESP8266WebServer.h>
 #include <ESP8266HTTPUpdateServer.h>
 
+#include "LEDStrip.h"
 #include "util.h"
 #include <ArduinoJson.h>
-#include <Adafruit_NeoPixel.h>
+#include "FastLED.h"
 #include "PatternManager.h"
 #include "CaptivePortalConfigurator.h"
 
@@ -25,40 +28,18 @@
 
 #include "networkutil.h"
 
-#define HARDWARE_VERSION fl_200
-
-#if HARDWARE_VERSION==fl_100a
-  #define SPI_SCK 13
-  #define SPI_MOSI 12
-  #define SPI_MISO 14
-  #define MEM_CS 4
-  #define LED_STRIP 5
-  #define BUTTON_LED 16
-  #define BUTTON 15
-#endif
-
-#if HARDWARE_VERSION==fl_200
-  #define SPI_SCK 13
-  #define SPI_MOSI 12
-  #define SPI_MISO 14
-  #define MEM_CS 4
-  #define LED_STRIP 5
-  #define BUTTON_LED 15
-  #define BUTTON 16
-#endif
-
-#define BUTTON_LED_ON 1
-#define BUTTON_LED_OFF 0
+// use ESP.getResetReason() TODO
 
 #define MAX_STRIP_LENGTH 750
 FlashMemory flash(SPI_SCK,SPI_MOSI,SPI_MISO,MEM_CS);
-Adafruit_NeoPixel strip(1, LED_STRIP, NEO_GRB + NEO_KHZ800);
+LEDStrip strip;
 PatternManager patternManager(&flash);
 //CaptivePortalConfigurator cpc("esp8266confignetwork");
 char defaultNetworkName[] = "Flickerstrip";
 WiFiServer server(80);
 WiFiUDP udp;
 char buf[2000];
+StaticJsonBuffer<500> jsonBuffer;
 
 char mac[20];
 bool disconnect = false;
@@ -100,6 +81,9 @@ struct PacketStructure {
 	uint32_t param2;
 };
 
+long lastSyncReceived;
+long lastSyncSent;;
+
 Configuration config;
 
 /////////////
@@ -119,9 +103,6 @@ void setup() {
 
   handleStartupHold();
 
-  strip.begin();
-  strip.show();
-
   createMacString();
 
   Serial.println("\n\n");
@@ -138,7 +119,8 @@ void setup() {
   }
 
   if (config.stripLength > MAX_STRIP_LENGTH) config.stripLength = MAX_STRIP_LENGTH;
-  strip.updateLength(config.stripLength);
+  strip.setLength(config.stripLength);
+  strip.begin(LED_STRIP);
 
   if (strcmp(config.version,GIT_CURRENT_VERSION) != 0) {
     Serial.println("Firmware version updated!");
@@ -149,6 +131,9 @@ void setup() {
   patternManager.loadPatterns();
   Serial.print("Loaded patterns: ");
   Serial.println(patternManager.getPatternCount());
+  lastSyncReceived = millis() + 3000;
+  lastSyncSent = -1;
+  Serial.println("init select pattern");
   patternManager.selectPattern(config.selectedPattern);
 }
 
@@ -162,15 +147,6 @@ void createMacString() {
   uint8_t macAddr[WL_MAC_ADDR_LENGTH];
   WiFi.macAddress(macAddr);
   snprintf(mac,20,"%x:%x:%x:%x:%x:%x",macAddr[0],macAddr[1],macAddr[2],macAddr[3],macAddr[4],macAddr[5]);
-}
-
-void startupPattern() {
-  fillStrip(10,10,25);
-  strip.show();
-  delay(300);
-  fillStrip(25,10,10);
-  strip.show();
-  delay(300);
 }
 
 void handleStartupHold() {
@@ -255,8 +231,8 @@ void blinkCount(byte count, int on, int off) {
 }
 
 void fillStrip(byte r, byte g, byte b) {
-  for (int i=0; i<config.stripLength; i++) {
-    strip.setPixelColor(i,r,g,b);
+  for (int i=0; i<strip.getLength(); i++) {
+    strip.setPixel(i,0,0,0);
   }
 }
 
@@ -419,7 +395,7 @@ void sendStatus(WiFiClient * client) {
 void patternTick() {
   byte brightness = (255*config.brightness)/100;
   strip.setBrightness(brightness);
-  bool hasNewFrame = patternManager.loadNextFrame(strip);
+  bool hasNewFrame = patternManager.loadNextFrame(&strip);
   if (hasNewFrame) {
     yield();
     ESP.wdtFeed();
@@ -431,8 +407,10 @@ void nextMode() {
   patternManager.showTestPattern(false);
 
   if(config.selectedPattern+1 >= patternManager.getPatternCount()) {
+    Serial.println("nextmode");
     selectPattern(0);
   } else {
+    Serial.println("nextmode");
     selectPattern(patternManager.getSelectedPattern()+1);
   }
 }
@@ -441,6 +419,7 @@ void nextModeWithToggle() {
   if (!isPowerOn()) {
     toggleStrip(true);
   } else if(config.selectedPattern+1 >= patternManager.getPatternCount()) {
+    Serial.println("nextmodetog");
     selectPattern(0);
     toggleStrip(false);
   } else {
@@ -463,6 +442,8 @@ void tick() {
   yield();
   long currentTime = millis();
   if (config.cycle != 0) {
+    Serial.print("config cylce not zero");
+    Serial.println(config.cycle);
     long rollOverTime = 1000*config.cycle;
     if (currentTime - lastSwitch > rollOverTime) {
       lastSwitch = currentTime;
@@ -490,8 +471,22 @@ void tick() {
     setLed(50);
   }
 
+  syncTick();
   buttonTick();
   ledTick();
+}
+
+void syncTick() {
+  long current = millis();
+  if (current - lastSyncReceived > 5000 && current - lastSyncSent > 3000) {
+    IPAddress ip = IPAddress(255, 255, 255, 255);
+    udp.beginPacket(ip, 2836); //NTP requests are to port 123
+    int n = 0;
+    n = snprintf(buf,2000,"{'command':'sync','pattern':'%s','frame':%d}",patternManager.getActivePattern()->name,patternManager.getCurrentFrame());
+    udp.write(buf, n);
+    udp.endPacket();
+    lastSyncSent = current;
+  }
 }
 
 void buttonTick() {
@@ -561,22 +556,57 @@ void ledTick() {
 }
 
 void handleUdpPacket(char * charbuf, int len) {
-  if (strcmp(charbuf,"mode") == 0) {
-    nextMode();
-  }
-  if (strcmp(charbuf,"sync") == 0) {
-    patternManager.syncToFrame(0);
+  Serial.print("buffer: ");
+  Serial.println(charbuf);
+  Serial.print("heap: ");
+  Serial.println(ESP.getFreeHeap());
+  JsonObject& root = jsonBuffer.parseObject(charbuf);
+
+  if (root.containsKey("group")) {
+    if (!strcmp(config.groupName,root["group"])) {
+        Serial.println("ignoring.. incorrect group!");
+    }
   }
 
-  if (strcmp(charbuf,"on") == 0) {
+  if (strcmp(root["command"],"next") == 0) {
+    nextMode();
+  }
+  if (strcmp(root["command"],"sync") == 0) {
+    int frame = 0;
+    if (root.containsKey("frame")) {
+      Serial.print("frame: ");
+      Serial.println(root["frame"].asString());
+      frame = root["frame"];
+    }
+    if (root.containsKey("pattern")) {
+      if (strcmp(patternManager.getActivePattern()->name,root["pattern"]) != 0) {
+        return;
+      }
+    }
+    lastSyncReceived = millis();
+    patternManager.syncToFrame(frame);
+  }
+
+  if (strcmp(root["command"],"on") == 0) {
     toggleStrip(true);
   }
 
-  if (strcmp(charbuf,"off") == 0) {
+  if (strcmp(root["command"],"off") == 0) {
     toggleStrip(false);
   }
 
-  if (strcmp(charbuf,"pattern") == 0) {
+  if (strcmp(root["command"],"pattern") == 0) {
+    if (root.containsKey("index")) {
+      Serial.print("index: ");
+      Serial.println(root["index"].asString());
+      int select = root["index"];
+      patternManager.selectPattern(select);
+    }
+    if (root.containsKey("name")) {
+      Serial.print("name: ");
+      Serial.println(root["iname"].asString());
+      patternManager.selectPattern(patternManager.getPatternIndexByName(root["name"].asString()));
+    }
     patternManager.syncToFrame(0);
   }
 }
@@ -698,7 +728,6 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
     char body[contentLength+1];
     readBytes(client,(char*)&body,contentLength,1000);
     body[contentLength] = 0;
-    StaticJsonBuffer<200> jsonBuffer;
     JsonObject& root = jsonBuffer.parseObject(body);
 
     memcpy(config.stripName,root["name"],strlen(root["name"])+1);
@@ -708,7 +737,6 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
     char body[contentLength+1];
     readBytes(client,(char*)&body,contentLength,1000);
     body[contentLength] = 0;
-    StaticJsonBuffer<200> jsonBuffer;
     JsonObject& root = jsonBuffer.parseObject(body);
 
     memcpy(config.groupName,root["name"],strlen(root["name"])+1);
@@ -728,7 +756,7 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
     config.stripLength = val;
     saveConfiguration();
 
-    strip.updateLength(config.stripLength);
+    //TODO strip.updateLength(config.stripLength);
     sendOk(&client);
   } else if (strcmp(urlval,"/power/on") == 0) {
     toggleStrip(true);
@@ -780,6 +808,7 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
   } else if (strcmp(urlval,"/pattern/select") == 0) {
     bool success = getInteger(buf,"index",&val);
     if (!success) return false;
+    Serial.println("server called");
     selectPattern(val);
     sendOk(&client);
   } else if (strcmp(urlval,"/pattern/test") == 0 || strcmp(urlval,"/pattern/save") == 0) {
@@ -827,6 +856,7 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
         remaining -= readSize;
         patternManager.saveLedPatternBody(pattern,page++,(byte*)&pagebuffer,0x100);
       }
+      Serial.println("selecting active");
       selectPattern(pattern);
     }
 
@@ -937,7 +967,7 @@ void loop() {
     startSSDP();
     server.begin();
     //UDP seems to be unstable.. TODO investigate why
-    //udp.begin(2836);
+    udp.begin(2836);
 
     while(accessPoint || WiFi.status() == WL_CONNECTED) {
       if (disconnect) return forgetNetwork();
@@ -955,16 +985,12 @@ void loop() {
         handleWebClient(client);
       }
 
-      /*
       int udpLength = udp.parsePacket();
       if (udpLength > 0) {
-        Serial.print("udp packet length");
-        Serial.println(udpLength);
         int readLength = udp.read(buf, 2000);
-        //buf[readLength] = 0;
-        //handleUdpPacket((byte*)buf,readLength);
+        buf[readLength] = 0;
+        handleUdpPacket(buf,readLength);
       }
-      */
     }
   }
 }
