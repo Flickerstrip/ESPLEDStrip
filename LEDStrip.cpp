@@ -61,6 +61,20 @@ void LEDStrip::setPixel(int i, byte r, byte g, byte b) {
   this->ledBuffer[index] = CRGB( r,g,b );
 }
 
+void LEDStrip::addPixel(int i, byte r, byte g, byte b) {
+  int index = i + this->start;
+  if (index > this->end-1) return;
+
+  if (this->reverse) {
+    index = this->end - i - 1;
+    if (index < this->start) return;
+  }
+
+  this->ledBuffer[index].r = this->ledBuffer[index].r + r;
+  this->ledBuffer[index].g = this->ledBuffer[index].g + g;
+  this->ledBuffer[index].b = this->ledBuffer[index].b + b;
+}
+
 void LEDStrip::setBrightness(byte brightness) {
   this->brightness = brightness;
 }

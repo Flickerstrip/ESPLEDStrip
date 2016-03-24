@@ -23,6 +23,7 @@ public:
   int getLength();
   void clear();
   void setPixel(int i, byte r, byte g, byte b);
+  void addPixel(int i, byte r, byte g, byte b);
   void setBrightness(byte brightness);
   void show();
 

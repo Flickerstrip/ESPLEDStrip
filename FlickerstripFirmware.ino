@@ -16,6 +16,8 @@
 #include <ESP8266HTTPUpdateServer.h>
 
 #include "LEDStrip.h"
+#include "PatternMetadata.h"
+#include "RunningPattern.h"
 #include "util.h"
 #include <ArduinoJson.h>
 #include "FastLED.h"
@@ -66,6 +68,7 @@ struct Configuration {
   int stripLength;
   int stripStart;
   int stripEnd;
+  int fadeDuration;
   char version[20];
 };
 
@@ -124,12 +127,14 @@ void setup() {
     saveConfiguration();
   }
 
+  /*
   Serial.print("len: ");
   Serial.println(config.stripLength);
   Serial.print("start: ");
   Serial.println(config.stripStart);
   Serial.print("end: ");
   Serial.println(config.stripEnd);
+  */
 
   //set up strip
   if (config.stripLength > MAX_STRIP_LENGTH) config.stripLength = MAX_STRIP_LENGTH;
@@ -137,6 +142,7 @@ void setup() {
   strip.setStart(config.stripStart);
   strip.setEnd(config.stripEnd);
   strip.setReverse((config.flags >> FLAG_REVERSED) & 0x1);
+  patternManager.setTransitionDuration(config.fadeDuration);
   strip.begin(LED_STRIP);
 
   if (strcmp(config.version,GIT_CURRENT_VERSION) != 0) {
@@ -152,7 +158,6 @@ void setup() {
   lastSyncSent = -1;
   lastPingCheck = -1;
   pingDelay = 0;
-  Serial.println("init select pattern");
   patternManager.selectPattern(config.selectedPattern);
 
   digitalWrite(BUTTON_LED,1);
@@ -310,7 +315,11 @@ void setReversed(bool reversed) {
     config.flags &= ~(1 << FLAG_REVERSED);
   }
 
-  strip.setReverse((config.flags >> FLAG_REVERSED) & 0x1);
+  strip.setReverse(isReversed());
+}
+
+void isReversed() {
+  return (config.flags >> FLAG_REVERSED) & 1
 }
 
 void setNetwork(String ssid,String password) {
@@ -373,6 +382,10 @@ void sendStatus(WiFiClient * client) {
 \"selectedPattern\":%d,\
 \"brightness\":%d,\
 \"length\":%d,\
+\"start\":%d,\
+\"end\":%d,\
+\"fade\":%d,\
+\"reversed\":%d,\
 \"cycle\":%d,\
 \"uptime\":%d,\
 \"memory\":{\"used\":%d,\"free\":%d,\"total\":%d},\
@@ -385,6 +398,10 @@ void sendStatus(WiFiClient * client) {
   patternManager.getSelectedPattern(),
   config.brightness,
   config.stripLength,
+  config.stripStart,
+  config.stripEnd,
+  config.fadeDuration,
+  isReversed(),
   config.cycle,
   millis(),
   patternManager.getUsedBlocks(),
@@ -823,6 +840,16 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
     config.cycle = val;
     saveConfiguration();
     sendOk(&client);
+  } else if (strcmp(urlval,"/config/fade") == 0) {
+    bool success = getInteger(buf,"value",&val);
+    if (!success) return false;
+    config.fadeDuration = val;
+
+    saveConfiguration();
+
+    patternManager.setTransitionDuration(config.fadeDuration);
+
+    sendOk(&client);
   } else if (strcmp(urlval,"/config/length") == 0) {
     bool success = getInteger(buf,"value",&val);
     if (!success) return false;
@@ -914,9 +941,9 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
     bool isTestPattern = strcmp(urlval,"/pattern/test") == 0;
 
     //BE AWARE: word alignment seems to matter.. we're copying this to a different location to avoid pointer alignment issues
-    PatternManager::PatternMetadata pat;
-    int readSize = readBytes(client,(char*)&pat,sizeof(PatternManager::PatternMetadata),1000);
-    if (readSize != sizeof(PatternManager::PatternMetadata)) {
+    PatternMetadata pat;
+    int readSize = readBytes(client,(char*)&pat,sizeof(PatternMetadata),1000);
+    if (readSize != sizeof(PatternMetadata)) {
       Serial.println("Error reading pattern metadata!");
       return false;
     }

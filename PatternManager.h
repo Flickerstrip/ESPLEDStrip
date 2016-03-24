@@ -9,6 +9,8 @@
 #endif
 
 #include "LEDStrip.h"
+#include "RunningPattern.h"
+#include "PatternMetadata.h"
 #include <FlashMemory.h>
 #include <ArduinoJson.h>
 
@@ -18,20 +20,12 @@ class PatternManager {
 public:
   PatternManager(FlashMemory * mem);
 
-  struct PatternMetadata {
-    char name[16];
-    uint32_t address;
-    uint32_t len;
-    uint16_t frames;
-    uint8_t flags;
-    uint8_t fps;
-  };
-
   void loadPatterns();
   void resetPatternsToDefault();
   void clearPatterns();
   void deletePattern(byte n);
   void selectPattern(byte n);
+  void setTransitionDuration(int duration);
   uint32_t findInsertLocation(uint32_t len);
   byte saveLedPatternMetadata(PatternMetadata * pat);
   void saveLedPatternBody(int pattern, uint32_t patternStartPage, byte * payload, uint32_t len);
@@ -50,6 +44,7 @@ public:
   int getPatternIndexByName(const char * name);
   bool isTestPatternActive();
   PatternMetadata * getActivePattern();
+  PatternMetadata * getPrevPattern();
 
   void syncToFrame(int frame,int pingDelay = 0);
   bool loadNextFrame(LEDStrip * strip);
@@ -67,12 +62,18 @@ private:
   PatternMetadata testPattern;
   bool testPatternActive;
 
+  int prev_selectedPattern;
   int selectedPattern;
+  RunningPattern prev;
+  RunningPattern current;
+
   int patternCount;
   int lastSavedPattern;
 
-  int currentFrame = 0;
-  long lastFrameTime = 0;
+  // Transition variables
+  long patternTransitionTime;
+  int transitionDuration;
+  long lastFrame;
 };
 
 #endif

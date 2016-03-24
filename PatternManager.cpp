@@ -6,6 +6,8 @@ PatternManager::PatternManager(FlashMemory * mem) {
   this->patternCount = 0;
   this->lastSavedPattern = -1;
   this->testPatternActive = false;
+  this->transitionDuration = 0;
+  this->lastFrame = 0;
 }
 
 void PatternManager::loadPatterns() {
@@ -76,8 +78,6 @@ void PatternManager::clearPatterns() {
 }
 
 void PatternManager::selectPattern(byte n) {
-    Serial.print("select pattern called: ");
-    Serial.println(n);
     if (this->patternCount == 0) {
       this->selectedPattern = -1;
       return;
@@ -85,12 +85,19 @@ void PatternManager::selectPattern(byte n) {
 
     if (n >= this->patternCount) return;
 
+    //Store the transition information
+    this->prev_selectedPattern = this->selectedPattern;
+    this->patternTransitionTime = millis();
+    prev = current;
+
     this->selectedPattern = n;
 
     PatternMetadata * pat = &this->patterns[n];
-    
-    this->currentFrame = 0;
-    this->lastFrameTime = 0;
+    current = RunningPattern(pat,this->buf);
+}
+
+void PatternManager::setTransitionDuration(int duration) {
+  this->transitionDuration = duration;
 }
 
 void PatternManager::deletePattern(byte n) {
@@ -172,8 +179,6 @@ void PatternManager::saveTestPatternBody(uint32_t patternStartPage, byte * paylo
 
 void PatternManager::showTestPattern(bool show) {
   this->testPatternActive = show;
-  this->currentFrame = 0;
-  this->lastFrameTime = 0;
 }
 
 int PatternManager::getTotalBlocks() {
@@ -205,7 +210,7 @@ int PatternManager::getSelectedPattern() {
 }
 
 int PatternManager::getCurrentFrame() {
-  return this->currentFrame;
+  return this->current.getCurrentFrame();
 }
 
 int PatternManager::getPatternIndexByName(const char * name) {
@@ -221,40 +226,17 @@ bool PatternManager::isTestPatternActive() {
   return this->testPatternActive;
 }
 
-PatternManager::PatternMetadata * PatternManager::getActivePattern() {
+PatternMetadata * PatternManager::getActivePattern() {
   if (this->testPatternActive) return &this->testPattern;
   return &this->patterns[this->getSelectedPattern()];
 }
 
+PatternMetadata * PatternManager::getPrevPattern() {
+  return &this->patterns[this->prev_selectedPattern];
+}
+
 void PatternManager::syncToFrame(int frame, int pingDelay) {
-  this->currentFrame = frame;
-  this->lastFrameTime = 0;
-  long msPerFrame = 1000/this->getActivePattern()->fps;
-  int rewindFrames = pingDelay / msPerFrame;
-  int remaining = pingDelay - msPerFrame * rewindFrames;
-
-  int nextFrameAt = millis() + remaining;
-  this->lastFrameTime = nextFrameAt - msPerFrame;
-
-  /*
-  Serial.print("pingDelay: ");
-  Serial.println(pingDelay);
-
-  Serial.print("rewind frames: ");
-  Serial.println(rewindFrames);
-
-  Serial.print("remaining ms: ");
-  Serial.println(remaining);
-
-  Serial.print("nextFrameAt: ");
-  Serial.println(nextFrameAt);
-
-  Serial.print("now: ");
-  Serial.println(millis());
-
-  Serial.print("lastFrameTime: ");
-  Serial.println(this->lastFrameTime);
-  */
+  this->current.syncToFrame(frame,pingDelay);
 }
 
 bool PatternManager::loadNextFrame(LEDStrip * strip) {
@@ -265,35 +247,25 @@ bool PatternManager::loadNextFrame(LEDStrip * strip) {
     return true;
   }
 
-  PatternMetadata * active = this->getActivePattern();
-  if (millis() - this->lastFrameTime < 1000  / active->fps) return false; //wait for a frame based on fps
-  this->lastFrameTime = millis();
-  uint32_t width = active->len / (active->frames * 3); //width in pixels of the pattern
-  uint32_t startAddress = active->address + (width * 3 * this->currentFrame);
+  bool isTransitioning = millis() - this->patternTransitionTime < this->transitionDuration;//we're in the middle of a transition
 
-  byte * bbuf = (byte*)this->buf;
+  bool needsUpdate = false; 
+  needsUpdate |= current.needsUpdate();
+  if (isTransitioning) needsUpdate |= prev.needsUpdate();
 
-//  Serial.print("Pattern Frame: ");
-//  Serial.print(startAddress,HEX);
-//  Serial.print(" ");
-//  Serial.print(width*3);
-//  Serial.println();
-//  Serial.flush();
-  this->flash->readBytes(startAddress,bbuf,width*3);
-//  Serial.println("finished reading pattern");
-  
-  for (int i=0; i<strip->getLength(); i++) {
-    strip->setPixel(i, bbuf[(3*(i % width))+0],bbuf[(3*(i % width))+1],bbuf[(3*(i % width))+2] );
-  }
-//  Serial.println("finished setting pixels");
+  if (!needsUpdate && millis() - this->lastFrame < 30) return false;
 
-  this->currentFrame += 1;
-  if (this->currentFrame >= active->frames) {
-    this->currentFrame = 0;
+  if (isTransitioning) {
+    strip->clear();
+    float transitionFactor =  (millis() - this->patternTransitionTime) / (float)this->transitionDuration;
+    current.loadNextFrame(strip,this->flash, transitionFactor);
+    prev.loadNextFrame(strip,this->flash,1.0 - transitionFactor);
+  } else {
+    strip->clear();
+    current.loadNextFrame(strip,this->flash, 1);
   }
 
-//  Serial.println(ESP.getFreeHeap());
-
+  this->lastFrame = millis();
   return true;
 }
 
@@ -320,7 +292,7 @@ bool PatternManager::loadNextFrame(LEDStrip * strip) {
 }
 */
 int PatternManager::serializePatterns(char * buf, int bufferSize) {
-  PatternManager::PatternMetadata * pat;
+  PatternMetadata * pat;
   char * ptr = buf;
   int size;
 
