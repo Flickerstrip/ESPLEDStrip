@@ -48,6 +48,7 @@ bool reconnect = false;
 long buttonDown = -1;
 byte clicksTriggered = 0;
 bool connecting = false;
+long NETWORK_RETRY = 1000*60*3; //retry connection every 3 minutes
 
 const byte BUTTON_UP = 1;
 const byte BUTTON_DOWN = 0;
@@ -283,7 +284,7 @@ void loadDefaultConfiguration() {
   config.cycle = 0;
   config.stripLength = 150;
   config.stripStart = 0;
-  config.stripEnd = 150;
+  config.stripEnd = -1;
   config.flags = (FLAG_CONFIGURED_CONFIGURED << FLAG_CONFIGURED) & //Set configured bit
                  (FLAG_REVERSED_FALSE << FLAG_REVERSED); //Set reversed bit
   memcpy(config.version,GIT_CURRENT_VERSION,strlen(GIT_CURRENT_VERSION)+1);
@@ -318,8 +319,8 @@ void setReversed(bool reversed) {
   strip.setReverse(isReversed());
 }
 
-void isReversed() {
-  return (config.flags >> FLAG_REVERSED) & 1
+bool isReversed() {
+  return (config.flags >> FLAG_REVERSED) & 1;
 }
 
 void setNetwork(String ssid,String password) {
@@ -1050,6 +1051,7 @@ bool doConnect() {
 }
 
 void forgetNetwork() {
+  WiFi.softAPdisconnect();
   WiFi.disconnect();
   config.ssid[0] = 0;
   config.password[0] = 0;
@@ -1094,8 +1096,15 @@ void loop() {
     //UDP seems to be unstable.. TODO investigate why
     udp.begin(2836);
 
+    long lastRequest = millis();
     while(accessPoint || WiFi.status() == WL_CONNECTED) {
+      //Attempt to reconnect to the parent network periodially if we haven't received any requests lately
+      if (accessPoint && millis() - lastRequest > NETWORK_RETRY) reconnect = true;
+
+      //Obey the disconnect command which forgets the configured network
       if (disconnect) return forgetNetwork();
+
+      //  Reconnect
       if (reconnect) {
         WiFi.softAPdisconnect();
         WiFi.disconnect();
@@ -1107,6 +1116,7 @@ void loop() {
 
       WiFiClient client = server.available();
       if (client) {
+        lastRequest = millis();
         handleWebClient(client);
       }
 

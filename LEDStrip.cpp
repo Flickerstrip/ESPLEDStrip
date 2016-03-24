@@ -31,6 +31,7 @@ void LEDStrip::setStart(int start) {
 
 void LEDStrip::setEnd(int end) {
   this->clear();
+  if (end == -1) end = this->length;
   this->end = end;
 }
 
