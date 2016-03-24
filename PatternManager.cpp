@@ -236,6 +236,7 @@ void PatternManager::syncToFrame(int frame, int pingDelay) {
   int nextFrameAt = millis() + remaining;
   this->lastFrameTime = nextFrameAt - msPerFrame;
 
+  /*
   Serial.print("pingDelay: ");
   Serial.println(pingDelay);
 
@@ -253,6 +254,7 @@ void PatternManager::syncToFrame(int frame, int pingDelay) {
 
   Serial.print("lastFrameTime: ");
   Serial.println(this->lastFrameTime);
+  */
 }
 
 bool PatternManager::loadNextFrame(LEDStrip * strip) {

@@ -64,15 +64,20 @@ struct Configuration {
   byte flags;
   int cycle;
   int stripLength;
+  int stripStart;
+  int stripEnd;
   char version[20];
 };
 
 bool powerOn = true;
 
 const byte FLAG_CONFIGURED = 7;
+const byte FLAG_REVERSED = 6;
 
 const byte FLAG_CONFIGURED_CONFIGURED = 0;
 const byte FLAG_CONFIGURED_UNCONFIGURED = 1;
+const byte FLAG_REVERSED_FALSE = 0;
+const byte FLAG_REVERSED_TRUE = 1;
 
 struct PacketStructure {
 	uint32_t type;
@@ -119,8 +124,19 @@ void setup() {
     saveConfiguration();
   }
 
+  Serial.print("len: ");
+  Serial.println(config.stripLength);
+  Serial.print("start: ");
+  Serial.println(config.stripStart);
+  Serial.print("end: ");
+  Serial.println(config.stripEnd);
+
+  //set up strip
   if (config.stripLength > MAX_STRIP_LENGTH) config.stripLength = MAX_STRIP_LENGTH;
   strip.setLength(config.stripLength);
+  strip.setStart(config.stripStart);
+  strip.setEnd(config.stripEnd);
+  strip.setReverse((config.flags >> FLAG_REVERSED) & 0x1);
   strip.begin(LED_STRIP);
 
   if (strcmp(config.version,GIT_CURRENT_VERSION) != 0) {
@@ -138,6 +154,8 @@ void setup() {
   pingDelay = 0;
   Serial.println("init select pattern");
   patternManager.selectPattern(config.selectedPattern);
+
+  digitalWrite(BUTTON_LED,1);
 }
 
 void buttonFix() {
@@ -259,7 +277,10 @@ void loadDefaultConfiguration() {
   config.brightness = 10;
   config.cycle = 0;
   config.stripLength = 150;
-  config.flags = (FLAG_CONFIGURED_CONFIGURED << FLAG_CONFIGURED); //Set configured bit
+  config.stripStart = 0;
+  config.stripEnd = 150;
+  config.flags = (FLAG_CONFIGURED_CONFIGURED << FLAG_CONFIGURED) & //Set configured bit
+                 (FLAG_REVERSED_FALSE << FLAG_REVERSED); //Set reversed bit
   memcpy(config.version,GIT_CURRENT_VERSION,strlen(GIT_CURRENT_VERSION)+1);
 }
 
@@ -280,6 +301,16 @@ void saveConfiguration() {
 
   }
   EEPROM.end();
+}
+
+void setReversed(bool reversed) {
+  if (reversed) {
+    config.flags |= 1 << FLAG_REVERSED;
+  } else {
+    config.flags &= ~(1 << FLAG_REVERSED);
+  }
+
+  strip.setReverse((config.flags >> FLAG_REVERSED) & 0x1);
 }
 
 void setNetwork(String ssid,String password) {
@@ -461,6 +492,7 @@ void tick() {
     powerWasOn = false;
   }
 
+  /*
   if (connecting) {
     setPulse(true); 
   } else if (isPowerOn()) {
@@ -468,9 +500,10 @@ void tick() {
   } else {
     setLed(50);
   }
+  */
 
   syncTick();
-  //buttonTick();
+  buttonTick();
   ledTick();
 }
 
@@ -551,12 +584,13 @@ void broadcastUdp(char * buf, int len) {
 }
 
 void syncTick() {
+  if (strlen(config.groupName) == 0) return; //sync is disabled if group is empty
   //lastPingCheck = -1;
   //pingDelay = 0;
   long current = millis();
   if (current - lastSyncReceived > 5000 && current - lastSyncSent > 3000) {
     int n = 0;
-    n = snprintf(buf,2000,"{'command':'sync','pattern':'%s','frame':%d}",patternManager.getActivePattern()->name,patternManager.getCurrentFrame());
+    n = snprintf(buf,2000,"{'command':'sync','pattern':'%s','frame':%d,'group':'%s'}",patternManager.getActivePattern()->name,patternManager.getCurrentFrame(),config.groupName);
     broadcastUdp(buf,n);
     lastSyncSent = current;
     lastPingCheck = -1;
@@ -566,7 +600,7 @@ void syncTick() {
     lastSyncSent = -1;
     if (current - lastPingCheck > 10000) {
       int n = 0;
-      n = snprintf(buf,2000,"{'command':'ping','mac':'%s'}",mac);
+      n = snprintf(buf,2000,"{'command':'ping','mac':'%s','group':'%s'}",mac,config.groupName);
       broadcastUdp(buf,n);
       lastPingCheck = current;
     }
@@ -584,42 +618,50 @@ void handleUdpPacket(char * charbuf, int len) {
   }
 
   if (root.containsKey("group")) {
-    if (!strcmp(config.groupName,root["group"])) {
-    }
-  }
+    Serial.print("configured group:");
+    Serial.println(config.groupName);
 
-  if (strcmp(root["command"],"ping") == 0) {
-    if (lastSyncSent != -1 && millis() - lastSyncSent < 3000) { //we're the master, we should respond to a ping
-      int n = 0;
-      char maccpy[20];
-      strncpy(maccpy,root["mac"],20); //back up the macaddress
-      n = snprintf(buf,2000,"{'command':'pingback','mac':'%s'}",maccpy); //respond with the pinger's mac address
-      broadcastUdp(buf,n);
+    Serial.print("group inc:");
+    Serial.println(root["group"].asString());
+    if (strcmp(config.groupName,root["group"]) != 0) {
+      Serial.println("skipping");
+      return;
     }
-    return; //we destroy the buffer.. so we should return
-  }
 
-  if (strcmp(root["command"],"pingback") == 0 && strcmp(root["mac"],mac) == 0) {
-    pingDelay = (millis() - lastPingCheck)/2;
-    Serial.print("got pingback.. ");
-    Serial.println(pingDelay);
+    if (strcmp(root["command"],"ping") == 0) {
+      if (lastSyncSent != -1 && millis() - lastSyncSent < 3000) { //we're the master, we should respond to a ping
+        int n = 0;
+        char maccpy[20];
+        strncpy(maccpy,root["mac"],20); //back up the macaddress
+        n = snprintf(buf,2000,"{'command':'pingback','mac':'%s'}",maccpy); //respond with the pinger's mac address
+        broadcastUdp(buf,n);
+      }
+      return; //we destroy the buffer.. so we should return
+    }
+
+    if (strcmp(root["command"],"pingback") == 0 && strcmp(root["mac"],mac) == 0) {
+      pingDelay = (millis() - lastPingCheck)/2;
+      Serial.print("got pingback.. ");
+      Serial.println(pingDelay);
+    }
+
+    if (strcmp(root["command"],"sync") == 0) {
+      int frame = 0;
+      if (root.containsKey("frame")) {
+        frame = root["frame"];
+      }
+      if (root.containsKey("pattern")) {
+        if (strcmp(patternManager.getActivePattern()->name,root["pattern"]) != 0) {
+          return;
+        }
+      }
+      lastSyncReceived = millis();
+      patternManager.syncToFrame(frame,pingDelay);
+    }
   }
 
   if (strcmp(root["command"],"next") == 0) {
     nextMode();
-  }
-  if (strcmp(root["command"],"sync") == 0) {
-    int frame = 0;
-    if (root.containsKey("frame")) {
-      frame = root["frame"];
-    }
-    if (root.containsKey("pattern")) {
-      if (strcmp(patternManager.getActivePattern()->name,root["pattern"]) != 0) {
-        return;
-      }
-    }
-    lastSyncReceived = millis();
-    patternManager.syncToFrame(frame,pingDelay);
   }
 
   if (strcmp(root["command"],"on") == 0) {
@@ -784,12 +826,37 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
   } else if (strcmp(urlval,"/config/length") == 0) {
     bool success = getInteger(buf,"value",&val);
     if (!success) return false;
-    fillStrip(0,0,0);
-    strip.show();
+
     config.stripLength = val;
     saveConfiguration();
 
-    //TODO strip.updateLength(config.stripLength);
+    strip.setLength(config.stripLength);
+    sendOk(&client);
+  } else if (strcmp(urlval,"/config/start") == 0) {
+    bool success = getInteger(buf,"value",&val);
+    if (!success) return false;
+
+    config.stripStart = val;
+    saveConfiguration();
+
+    strip.setStart(config.stripStart);
+    sendOk(&client);
+  } else if (strcmp(urlval,"/config/end") == 0) {
+    bool success = getInteger(buf,"value",&val);
+    if (!success) return false;
+
+    config.stripEnd = val;
+    saveConfiguration();
+
+    strip.setEnd(config.stripEnd);
+    sendOk(&client);
+  } else if (strcmp(urlval,"/config/reversed") == 0) {
+    bool success = getInteger(buf,"value",&val);
+    if (!success) return false;
+
+    setReversed(val == 1);
+    saveConfiguration();
+
     sendOk(&client);
   } else if (strcmp(urlval,"/power/on") == 0) {
     toggleStrip(true);
