@@ -510,7 +510,6 @@ void tick() {
     powerWasOn = false;
   }
 
-  /*
   if (connecting) {
     setPulse(true); 
   } else if (isPowerOn()) {
@@ -518,7 +517,6 @@ void tick() {
   } else {
     setLed(50);
   }
-  */
 
   syncTick();
   buttonTick();
@@ -822,7 +820,7 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
     StaticJsonBuffer<200> jsonBuffer;
     JsonObject& root = jsonBuffer.parseObject(body);
 
-    memcpy(config.stripName,root["name"],strlen(root["name"])+1);
+    memcpy(config.stripName,root.get<const char*>("name"),strlen(root.get<const char*>("name"))+1);
     saveConfiguration();
     sendStatus(&client);
   } else if (strcmp(urlval,"/config/group") == 0) {
@@ -832,7 +830,7 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
     StaticJsonBuffer<200> jsonBuffer;
     JsonObject& root = jsonBuffer.parseObject(body);
 
-    memcpy(config.groupName,root["name"],strlen(root["name"])+1);
+    memcpy(config.groupName,root.get<const char*>("name"),strlen(root.get<const char*>("name"))+1);
     saveConfiguration();
     sendStatus(&client);
   } else if (strcmp(urlval,"/config/cycle") == 0) {
