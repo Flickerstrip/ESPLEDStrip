@@ -1,4 +1,4 @@
-#define HARDWARE_VERSION fl_200
+#define HARDWARE_VERSION fl_200a
 
 #if HARDWARE_VERSION==fl_100a
   #define SPI_SCK 13

@@ -327,6 +327,7 @@ void loadDefaultConfiguration() {
   config.stripLength = 150;
   config.stripStart = 0;
   config.stripEnd = -1;
+  config.fadeDuration = 0;
   config.flags = (FLAG_CONFIGURED_CONFIGURED << FLAG_CONFIGURED) & //Set configured bit
                  (FLAG_REVERSED_FALSE << FLAG_REVERSED); //Set reversed bit
   memcpy(config.version,GIT_CURRENT_VERSION,strlen(GIT_CURRENT_VERSION)+1);

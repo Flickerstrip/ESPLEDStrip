@@ -179,6 +179,15 @@ void PatternManager::saveTestPatternBody(uint32_t patternStartPage, byte * paylo
 
 void PatternManager::showTestPattern(bool show) {
   this->testPatternActive = show;
+
+  if (show) {
+    this->prev_selectedPattern = 0;
+    this->selectedPattern = 0;
+    this->patternTransitionTime = millis() - this->transitionDuration;;
+
+    PatternMetadata * pat = &this->testPattern;
+    current = RunningPattern(pat,this->buf);
+  }
 }
 
 int PatternManager::getTotalBlocks() {
@@ -232,6 +241,7 @@ PatternMetadata * PatternManager::getActivePattern() {
 }
 
 PatternMetadata * PatternManager::getPrevPattern() {
+  if (this->testPatternActive) return &this->testPattern;
   return &this->patterns[this->prev_selectedPattern];
 }
 
