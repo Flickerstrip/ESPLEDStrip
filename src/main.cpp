@@ -38,7 +38,8 @@ PatternManager patternManager(&flash);
 char defaultNetworkName[] = "Flickerstrip";
 WiFiServer server(80);
 WiFiUDP udp;
-char buf[2000];
+#define BUFFER_SIZE 3000
+char buf[BUFFER_SIZE];
 
 char mac[20];
 bool disconnect = false;
@@ -91,6 +92,8 @@ long lastSyncReceived;
 long lastSyncSent;
 long lastPingCheck;
 int pingDelay;
+
+int showSingleFrame = -1;
 
 Configuration config;
 
@@ -272,9 +275,9 @@ void startEmergencyFirmwareMode() {
   WiFi.disconnect();
   WiFi.mode(WIFI_AP);
   WiFi.softAPConfig(ip,ip,netmask);
-  WiFi.softAP("Flickerstrip");
+  WiFi.softAP("FlickerstripRecovery");
 
-  Serial.print("Created access point: Flickerstrip");
+  Serial.print("Created access point: FlickerstripRecovery");
   Serial.print(" [");
   Serial.print(WiFi.softAPIP());
   Serial.println("]");
@@ -403,10 +406,23 @@ void serialLine() {
     factoryReset();
   } else if (strstr(serialBuffer,"reboot") != NULL) {
     ESP.restart();
+  } else if (strstr(serialBuffer,"config:") != NULL) {
+    char * start = strchr(serialBuffer,':');
+    start++;
+    char * end = strchr(start,':');
+    memcpy(config.ssid,start,end-start);
+    config.ssid[end-start] = 0;
+
+    start = end+1;
+    strcpy(config.password,start);
+
+    saveConfiguration();
+    ESP.restart();
   }
 }
 
 void selectPattern(byte pattern) {
+  showSingleFrame = -1;
   patternManager.showTestPattern(false);
   patternManager.selectPattern(pattern);
   config.selectedPattern = patternManager.getSelectedPattern();
@@ -416,7 +432,7 @@ void selectPattern(byte pattern) {
 char patternBuffer[1000];
 void sendStatus(WiFiClient * client) {
 
-  int n = snprintf(buf,2000,"{\
+  int n = snprintf(buf,BUFFER_SIZE,"{\
 \"type\":\"status\",\
 \"name\":\"%s\",\
 \"group\":\"%s\",\
@@ -452,7 +468,7 @@ void sendStatus(WiFiClient * client) {
   patternManager.getAvailableBlocks(),
   patternManager.getTotalBlocks());
 
-  int remaining = 2000 - n;
+  int remaining = BUFFER_SIZE - n;
   char * ptr = buf + n;
   int patternBufferLength = patternManager.serializePatterns(ptr,remaining);
   ptr[patternBufferLength] = '}';
@@ -487,10 +503,22 @@ void sendStatus(WiFiClient * client) {
 }
 */
 
+int currentlyShowingFrame = -1;
 void patternTick() {
   byte brightness = (255*config.brightness)/100;
   strip.setBrightness(brightness);
-  bool hasNewFrame = patternManager.loadNextFrame(&strip);
+  bool hasNewFrame = false;
+  if (showSingleFrame == -1) {
+    currentlyShowingFrame = -1;
+    hasNewFrame = patternManager.loadNextFrame(&strip);
+  } else {
+    patternManager.loadFrame(&strip,showSingleFrame);
+    if (currentlyShowingFrame != showSingleFrame) {
+      hasNewFrame = true;
+      currentlyShowingFrame = showSingleFrame;
+    }
+  }
+
   if (hasNewFrame) {
     yield();
     ESP.wdtFeed();
@@ -548,7 +576,7 @@ void tick() {
     powerWasOn = true;
     patternTick();
   } else if (powerWasOn == true) {
-    fillStrip(0,0,0);
+    strip.clear();
     strip.show();
     powerWasOn = false;
   }
@@ -677,13 +705,7 @@ void handleUdpPacket(char * charbuf, int len) {
   }
 
   if (root.containsKey("group")) {
-    Serial.print("configured group:");
-    Serial.println(config.groupName);
-
-    Serial.print("group inc:");
-    Serial.println(root["group"].asString());
     if (strcmp(config.groupName,root["group"]) != 0) {
-      Serial.println("skipping");
       return;
     }
 
@@ -974,6 +996,11 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
     if (!success) return false;
     patternManager.deletePattern(val);
     sendOk(&client);
+  } else if (strcmp(urlval,"/pattern/frame") == 0) {
+    bool success = getInteger(buf,"value",&val);
+    if (!success) return false;
+    showSingleFrame = val;
+    sendOk(&client);
   } else if (strcmp(urlval,"/pattern/select") == 0) {
     bool success = getInteger(buf,"index",&val);
     if (!success) return false;
@@ -1009,6 +1036,7 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
         patternManager.saveTestPatternBody(page++,(byte*)&pagebuffer,0x100);
       }
       patternManager.showTestPattern(true);
+      showSingleFrame = -1;
     } else {
       byte pattern = patternManager.saveLedPatternMetadata(&pat);
       int page = 0;

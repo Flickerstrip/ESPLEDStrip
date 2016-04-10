@@ -4,12 +4,14 @@
 LEDStrip::LEDStrip() {
   this->length = 1;
   this->ledBuffer = NULL;
+  this->controller = NULL;
   this->start = 0;
   this->end = 1;
   this->reverse = false;
 }
 
 void LEDStrip::begin(const uint8_t pin) {
+  Serial.println("ledstrip begin");
   this->ledBuffer = new CRGB[this->length];
 
   this->controller = &FastLED.addLeds<WS2812B, LED_STRIP, GRB>(this->ledBuffer, this->length);
@@ -17,6 +19,7 @@ void LEDStrip::begin(const uint8_t pin) {
 
 void LEDStrip::setLength(int length) {
   this->clear();
+  this->show();
   this->length = length;
   if (this->ledBuffer != NULL) {
     delete [] this->ledBuffer;
@@ -26,11 +29,13 @@ void LEDStrip::setLength(int length) {
 
 void LEDStrip::setStart(int start) {
   this->clear();
+  this->show();
   this->start = start;
 }
 
 void LEDStrip::setEnd(int end) {
   this->clear();
+  this->show();
   if (end == -1) end = this->length;
   this->end = end;
 }
@@ -59,6 +64,17 @@ void LEDStrip::setPixel(int i, byte r, byte g, byte b) {
     if (index < this->start) return;
   }
 
+  /*
+  Serial.print("SET: ");
+  Serial.print(i);
+  Serial.print(" ");
+  Serial.print(r);
+  Serial.print(" ");
+  Serial.print(g);
+  Serial.print(" ");
+  Serial.print(b);
+  Serial.println();
+  */
   this->ledBuffer[index] = CRGB( r,g,b );
 }
 
@@ -81,5 +97,6 @@ void LEDStrip::setBrightness(byte brightness) {
 }
 
 void LEDStrip::show() {
+  if (this->controller == NULL) return;
   this->controller->showLeds(this->brightness);
 }

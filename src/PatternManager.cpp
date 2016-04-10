@@ -249,11 +249,17 @@ void PatternManager::syncToFrame(int frame, int pingDelay) {
   this->current.syncToFrame(frame,pingDelay);
 }
 
+void PatternManager::loadFrame(LEDStrip * strip, int frame) {
+  if (this->patternCount == 0) {
+    strip->clear();
+  }
+
+  current.loadFrame(strip,this->flash,1.0f,frame);
+}
+
 bool PatternManager::loadNextFrame(LEDStrip * strip) {
   if (this->patternCount == 0) {
-    for (int i=0; i<strip->getLength(); i++) { //clear strip
-      strip->setPixel(i,0,0,0);
-    }
+    strip->clear();
     return true;
   }
 

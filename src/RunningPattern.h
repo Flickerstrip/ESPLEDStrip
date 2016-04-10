@@ -19,6 +19,7 @@ public:
 
   void syncToFrame(int frame,int pingDelay = 0);
   bool needsUpdate();
+  void loadFrame(LEDStrip * strip, FlashMemory * flash, float multiplier, int frame);
   void loadNextFrame(LEDStrip * strip, FlashMemory * flash, float multiplier);
 
   int getCurrentFrame();

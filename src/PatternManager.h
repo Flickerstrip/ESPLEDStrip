@@ -47,6 +47,7 @@ public:
   PatternMetadata * getPrevPattern();
 
   void syncToFrame(int frame,int pingDelay = 0);
+  void loadFrame(LEDStrip * strip, int frame);
   bool loadNextFrame(LEDStrip * strip);
   int serializePatterns(char * buf, int len);
   void jsonPatterns(JsonArray& json);
