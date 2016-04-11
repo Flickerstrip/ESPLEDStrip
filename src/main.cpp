@@ -12,6 +12,8 @@
 #include <ESP8266WebServer.h>
 #include <ESP8266HTTPUpdateServer.h>
 #include <ArduinoJson.h>
+
+//#define FASTLED_ESP8266_RAW_PIN_ORDER
 #include "FastLED.h"
 
 //Libraries maintained by Flickerstrip
@@ -507,17 +509,7 @@ int currentlyShowingFrame = -1;
 void patternTick() {
   byte brightness = (255*config.brightness)/100;
   strip.setBrightness(brightness);
-  bool hasNewFrame = false;
-  if (showSingleFrame == -1) {
-    currentlyShowingFrame = -1;
-    hasNewFrame = patternManager.loadNextFrame(&strip);
-  } else {
-    patternManager.loadFrame(&strip,showSingleFrame);
-    if (currentlyShowingFrame != showSingleFrame) {
-      hasNewFrame = true;
-      currentlyShowingFrame = showSingleFrame;
-    }
-  }
+  bool hasNewFrame = patternManager.loadNextFrame(&strip);
 
   if (hasNewFrame) {
     yield();
@@ -999,7 +991,7 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
   } else if (strcmp(urlval,"/pattern/frame") == 0) {
     bool success = getInteger(buf,"value",&val);
     if (!success) return false;
-    showSingleFrame = val;
+    patternManager.freezeFrame(val);
     sendOk(&client);
   } else if (strcmp(urlval,"/pattern/select") == 0) {
     bool success = getInteger(buf,"index",&val);

@@ -47,7 +47,7 @@ public:
   PatternMetadata * getPrevPattern();
 
   void syncToFrame(int frame,int pingDelay = 0);
-  void loadFrame(LEDStrip * strip, int frame);
+  void freezeFrame(int frame);
   bool loadNextFrame(LEDStrip * strip);
   int serializePatterns(char * buf, int len);
   void jsonPatterns(JsonArray& json);
@@ -70,6 +70,8 @@ private:
 
   int patternCount;
   int lastSavedPattern;
+
+  int freezeFrameIndex;
 
   // Transition variables
   long patternTransitionTime;

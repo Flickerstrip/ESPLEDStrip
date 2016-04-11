@@ -8,6 +8,7 @@ PatternManager::PatternManager(FlashMemory * mem) {
   this->testPatternActive = false;
   this->transitionDuration = 0;
   this->lastFrame = 0;
+  this->freezeFrameIndex = -1;
 }
 
 void PatternManager::loadPatterns() {
@@ -78,6 +79,8 @@ void PatternManager::clearPatterns() {
 }
 
 void PatternManager::selectPattern(byte n) {
+    this->freezeFrameIndex = -1;
+
     if (this->patternCount == 0) {
       this->selectedPattern = -1;
       return;
@@ -179,6 +182,7 @@ void PatternManager::saveTestPatternBody(uint32_t patternStartPage, byte * paylo
 
 void PatternManager::showTestPattern(bool show) {
   this->testPatternActive = show;
+  this->freezeFrameIndex = -1;
 
   if (show) {
     this->prev_selectedPattern = 0;
@@ -249,12 +253,13 @@ void PatternManager::syncToFrame(int frame, int pingDelay) {
   this->current.syncToFrame(frame,pingDelay);
 }
 
-void PatternManager::loadFrame(LEDStrip * strip, int frame) {
-  if (this->patternCount == 0) {
-    strip->clear();
-  }
+void PatternManager::freezeFrame(int frame) {
+  if (frame == -1) frame = current.getCurrentFrame(); //pass -1 to freeze at current frame
 
-  current.loadFrame(strip,this->flash,1.0f,frame);
+  if (frame < 0) frame = 0;
+  if (frame >= this->getActivePattern()->frames) frame = this->getActivePattern()->frames-1;
+
+  this->freezeFrameIndex = frame;
 }
 
 bool PatternManager::loadNextFrame(LEDStrip * strip) {
@@ -266,18 +271,25 @@ bool PatternManager::loadNextFrame(LEDStrip * strip) {
   bool isTransitioning = millis() - this->patternTransitionTime < this->transitionDuration;//we're in the middle of a transition
 
   bool needsUpdate = false; 
-  needsUpdate |= current.needsUpdate();
-  if (isTransitioning) needsUpdate |= prev.needsUpdate();
+
+  if (this->freezeFrameIndex >= 0) {
+    //we're in freeze frame mode
+    needsUpdate = (millis() - this->lastFrame) > 1000/5; //update at 5fps if we're running a single frame
+  } else {
+    needsUpdate |= current.needsUpdate();
+    if (isTransitioning) needsUpdate |= prev.needsUpdate();
+  }
 
   if (!needsUpdate && millis() - this->lastFrame < 30) return false;
 
-  if (isTransitioning) {
+  if (this->freezeFrameIndex >= 0) {
+    current.loadFrame(strip,this->flash, 1, this->freezeFrameIndex);
+  } else if (isTransitioning) {
     strip->clear();
     float transitionFactor =  (millis() - this->patternTransitionTime) / (float)this->transitionDuration;
     current.loadNextFrame(strip,this->flash, transitionFactor);
     prev.loadNextFrame(strip,this->flash,1.0 - transitionFactor);
   } else {
-    strip->clear();
     current.loadNextFrame(strip,this->flash, 1);
   }
 
