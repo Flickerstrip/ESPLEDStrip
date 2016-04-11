@@ -43,6 +43,7 @@ WiFiUDP udp;
 #define BUFFER_SIZE 3000
 char buf[BUFFER_SIZE];
 
+long lastSwitch = 0;
 char mac[20];
 bool disconnect = false;
 bool reconnect = false;
@@ -545,8 +546,6 @@ void toggleStrip(bool on) {
 }
 
 int powerWasOn = true;
-int rollOver = 0;
-long lastSwitch = 0;
 void tick() {
   ESP.wdtFeed();
   yield();
