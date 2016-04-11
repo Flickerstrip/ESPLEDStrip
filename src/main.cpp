@@ -95,8 +95,6 @@ long lastSyncSent;
 long lastPingCheck;
 int pingDelay;
 
-int showSingleFrame = -1;
-
 Configuration config;
 
 /////////////
@@ -424,7 +422,7 @@ void serialLine() {
 }
 
 void selectPattern(byte pattern) {
-  showSingleFrame = -1;
+  lastSwitch = millis();
   patternManager.showTestPattern(false);
   patternManager.selectPattern(pattern);
   config.selectedPattern = patternManager.getSelectedPattern();
@@ -1028,7 +1026,6 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
         patternManager.saveTestPatternBody(page++,(byte*)&pagebuffer,0x100);
       }
       patternManager.showTestPattern(true);
-      showSingleFrame = -1;
     } else {
       byte pattern = patternManager.saveLedPatternMetadata(&pat);
       int page = 0;
