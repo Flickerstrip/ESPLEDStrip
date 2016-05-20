@@ -33,3 +33,4 @@
 #define BUTTON_LED_ON 1
 #define BUTTON_LED_OFF 0
 
+#define EEPROM_SIZE 4096

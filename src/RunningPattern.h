@@ -10,7 +10,7 @@
 
 #include "LEDStrip.h"
 #include "PatternMetadata.h"
-#include <FlashMemory.h>
+#include <M25PXFlashMemory.h>
 
 class RunningPattern {
 public:
@@ -19,8 +19,8 @@ public:
 
   void syncToFrame(int frame,int pingDelay = 0);
   bool needsUpdate();
-  void loadFrame(LEDStrip * strip, FlashMemory * flash, float multiplier, int frame);
-  void loadNextFrame(LEDStrip * strip, FlashMemory * flash, float multiplier);
+  void loadFrame(LEDStrip * strip, M25PXFlashMemory * flash, float multiplier, int frame);
+  void loadNextFrame(LEDStrip * strip, M25PXFlashMemory * flash, float multiplier);
 
   int getCurrentFrame();
   RunningPattern& operator=(const RunningPattern& a);

@@ -11,4 +11,10 @@ struct PatternMetadata {
   uint8_t fps;
 };
 
+struct PatternReference {
+  uint32_t address;
+  uint32_t len;
+};
+
+const static int MAX_PATTERNS = 100;
 #endif

@@ -11,16 +11,22 @@
 #include "LEDStrip.h"
 #include "RunningPattern.h"
 #include "PatternMetadata.h"
-#include <FlashMemory.h>
+#include <EEPROM.h>
+#include <M25PXFlashMemory.h>
 #include <ArduinoJson.h>
 
+void debugHex(const char *buf, int len);
+
+#define EEPROM_PATTERNS_START 0x100
+#define EEPROM_TEST_PATTERN 0xf0
 #define MAXIMUM_PATTERN_BUFFER 450
 
 class PatternManager {
 public:
-  PatternManager(FlashMemory * mem);
+  PatternManager(M25PXFlashMemory * mem);
 
   void loadPatterns();
+  void echoPatternTable();
   void resetPatternsToDefault();
   void clearPatterns();
   void deletePattern(byte n);
@@ -53,10 +59,9 @@ public:
   void jsonPatterns(JsonArray& json);
 
 private:
-  const static int NUM_PAGES = 4096;
-  const static int MAX_PATTERNS = 17;
+  const static int NUM_SUBSECTORS = 250; //TODO update me for 16M flash
 
-  FlashMemory * flash;
+  M25PXFlashMemory * flash;
 
   char buf[1000];
   PatternMetadata patterns[MAX_PATTERNS];

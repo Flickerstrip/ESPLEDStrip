@@ -18,7 +18,7 @@
 
 //Libraries maintained by Flickerstrip
 #include <SoftwareSPI.h>
-#include <FlashMemory.h>
+#include <M25PXFlashMemory.h>
 
 #include "defines.h"
 #include "LEDStrip.h"
@@ -33,7 +33,7 @@
 // use ESP.getResetReason() TODO
 
 #define MAX_STRIP_LENGTH 750
-FlashMemory flash(SPI_SCK,SPI_MOSI,SPI_MISO,MEM_CS);
+M25PXFlashMemory flash(SPI_SCK,SPI_MOSI,SPI_MISO,MEM_CS);
 LEDStrip strip;
 PatternManager patternManager(&flash);
 //CaptivePortalConfigurator cpc("esp8266confignetwork");
@@ -107,7 +107,6 @@ byte heldTriggered = 0;
 
 //TODO create an H file? reorganize this all
 void setup();
-void buttonFix();
 void createMacString();
 void handleStartupHold();
 void startEmergencyFirmwareMode();
@@ -155,8 +154,6 @@ void setup() {
   pinMode(BUTTON_LED,OUTPUT);
   pinMode(BUTTON,INPUT);
 
-  buttonFix();
-
   handleStartupHold();
 
   createMacString();
@@ -170,6 +167,7 @@ void setup() {
   if (!loadConfiguration()) {
     Serial.println("Initializing factory settings");
     patternManager.resetPatternsToDefault();
+
     loadDefaultConfiguration();
     saveConfiguration();
   }
@@ -210,12 +208,6 @@ void setup() {
   digitalWrite(BUTTON_LED,1);
 }
 
-void buttonFix() {
-  pinMode(BUTTON,OUTPUT); //Required for dan's flickerstrip.. TODO what's going on here?
-  digitalWrite(BUTTON,1);
-  pinMode(BUTTON,INPUT);
-}
-
 void createMacString() {
   uint8_t macAddr[WL_MAC_ADDR_LENGTH];
   WiFi.macAddress(macAddr);
@@ -243,8 +235,6 @@ void handleStartupHold() {
       heldTriggered++;
       break;
     }
-
-    buttonFix();
     delay(100);
   }
 
@@ -311,11 +301,13 @@ void fillStrip(byte r, byte g, byte b) {
 
 void factoryReset() {
   Serial.println("Clearing configuration and rebooting");
-  EEPROM.begin(sizeof(Configuration));
-  for (int i=0; i<sizeof(Configuration); i++) {
+  EEPROM.begin(EEPROM_SIZE);
+  for (int i=0; i<EEPROM_SIZE; i++) {
     EEPROM.write(i,0xff);
   }
   EEPROM.end();
+
+  flash.bulkErase(); //Clear the entire flash chip
 
   ESP.restart();
 }
@@ -338,7 +330,7 @@ void loadDefaultConfiguration() {
 }
 
 bool loadConfiguration() {
-  EEPROM.begin(sizeof(Configuration));
+  EEPROM.begin(EEPROM_SIZE);
   for (int i=0; i<sizeof(Configuration); i++) {
     ((byte *)(&config))[i] = EEPROM.read(i);
   }
@@ -348,10 +340,9 @@ bool loadConfiguration() {
 }
 
 void saveConfiguration() {
-  EEPROM.begin(sizeof(Configuration));
+  EEPROM.begin(EEPROM_SIZE);
   for (int i=0; i<sizeof(Configuration); i++) {
     EEPROM.write(i,((byte *)(&config))[i]);
-
   }
   EEPROM.end();
 }
@@ -419,6 +410,34 @@ void serialLine() {
 
     saveConfiguration();
     ESP.restart();
+  } else if (strstr(serialBuffer,"patterns") != NULL) {
+    Serial.println("Pattern Table: ");
+    patternManager.echoPatternTable();
+  } else if (strstr(serialBuffer,"dump:") != NULL) {
+    char * start = strchr(serialBuffer,':');
+    start++;
+    int page = atoi(start);
+    page = page * 256;
+
+    Serial.print("Dumping Flash: 0x");
+    Serial.print(page,HEX);
+    Serial.println();
+
+    flash.readPage(page,(byte*)buf,256);
+
+    debugHex(buf,256);
+  } else if (strstr(serialBuffer,"eeprom:") != NULL) {
+    char * start = strchr(serialBuffer,':');
+    start++;
+    int loc = atoi(start);
+
+    Serial.print("Dumping EEPROM: 0x");
+    Serial.print(loc,HEX);
+    Serial.println();
+
+    EEPROM.begin(EEPROM_SIZE);
+    debugHex((char*)(EEPROM.getDataPtr()+loc),30);
+    EEPROM.end();
   }
 }
 
@@ -613,7 +632,6 @@ void buttonTick() {
       if (currentTime+buttonDown > 100) buttonDown = 0; //reset the button debounce
     }
   }
-  buttonFix();
 }
 
 bool ledPulsing = false;
@@ -938,6 +956,9 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
     saveConfiguration();
 
     sendOk(&client);
+  } else if (strcmp(urlval,"/pattern/next") == 0) {
+    nextMode();
+    sendOk(&client);
   } else if (strcmp(urlval,"/power/on") == 0) {
     toggleStrip(true);
     sendOk(&client);
@@ -1033,6 +1054,10 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
         int pageReadSize = 0x100;
         if (remaining < pageReadSize) pageReadSize = remaining;
         readSize = readBytes(client,(char*)&pagebuffer,0x100,1000);
+        /*
+        Serial.println("read page: ");
+        debugHex((char*)&pagebuffer,0x100);
+        */
         if (readSize != pageReadSize) {
           Serial.println("Short read!");
           return false;

@@ -33,11 +33,11 @@ bool RunningPattern::needsUpdate() {
   return millis() - this->lastFrameTime > 1000  / this->pattern->fps;
 }
 
-void RunningPattern::loadFrame(LEDStrip * strip, FlashMemory * flash, float multiplier, int frame) {
+void RunningPattern::loadFrame(LEDStrip * strip, M25PXFlashMemory * flash, float multiplier, int frame) {
   if (this->pattern == NULL) return;
 
-  uint32_t width = this->pattern->len / (this->pattern->frames * 3); //width in pixels of the pattern
-  uint32_t startAddress = this->pattern->address + (width * 3 * frame);
+  uint32_t width = (this->pattern->len - 0x100) / (this->pattern->frames * 3); //width in pixels of the pattern
+  uint32_t startAddress = this->pattern->address + 0x100 + (width * 3 * frame);
 
   byte * bbuf = (byte*)this->buf;
 
@@ -58,7 +58,7 @@ void RunningPattern::loadFrame(LEDStrip * strip, FlashMemory * flash, float mult
   }
 }
 
-void RunningPattern::loadNextFrame(LEDStrip * strip, FlashMemory * flash, float multiplier) {
+void RunningPattern::loadNextFrame(LEDStrip * strip, M25PXFlashMemory * flash, float multiplier) {
   if (this->pattern == NULL) return;
 
   this->loadFrame(strip,flash,multiplier,this->currentFrame);
