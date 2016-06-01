@@ -30,6 +30,14 @@ void RunningPattern::syncToFrame(int frame, int pingDelay) {
 
 bool RunningPattern::needsUpdate() {
   if (this->pattern == NULL) return true;
+  /*
+  Serial.print("last frame: ");
+  Serial.println(this->lastFrameTime);
+  Serial.print("fps: ");
+  Serial.println(this->pattern->fps);
+  Serial.print("millis: ");
+  Serial.println(millis());
+  */
   return millis() - this->lastFrameTime > 1000  / this->pattern->fps;
 }
 
@@ -60,6 +68,7 @@ void RunningPattern::loadFrame(LEDStrip * strip, M25PXFlashMemory * flash, float
 
 void RunningPattern::loadNextFrame(LEDStrip * strip, M25PXFlashMemory * flash, float multiplier) {
   if (this->pattern == NULL) return;
+  Serial.println("rp load next frame");
 
   this->loadFrame(strip,flash,multiplier,this->currentFrame);
 

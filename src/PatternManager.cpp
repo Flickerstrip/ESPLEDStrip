@@ -37,6 +37,15 @@ void PatternManager::loadPatterns() {
       //Read the address/len from EEPROM
       for (int l=0; l<sizeof(PatternReference); l++) {
         ((byte *)(&ref))[l] = EEPROM.read(EEPROM_PATTERNS_START+1+i*sizeof(PatternReference)+l);
+        /*
+        Serial.print("read byte: [");
+        Serial.print(i);
+        Serial.print(" ");
+        Serial.print(l);
+        Serial.print("] ");
+        Serial.print(((byte *)(&ref))[l]);
+        Serial.println();
+        */
       }
       /*
       Serial.print("address: ");
@@ -80,6 +89,7 @@ void PatternManager::loadPatterns() {
     Serial.print(earliestAddress,HEX);
     Serial.println();
     */
+
     //Load the first page of the chosen pattern that contains the metadata
     this->flash->readBytes(earliestAddress,(byte *)(&this->patterns[patternIndex]),sizeof(PatternMetadata));
     /*
@@ -92,8 +102,10 @@ void PatternManager::loadPatterns() {
   EEPROM.end();
 
   //we should have a sorted list of patterns now.. lets check
-  //Serial.println("finished loadng patterns: ");
-  //this->echoPatternTable();
+  /*
+  Serial.println("finished loadng patterns: ");
+  this->echoPatternTable();
+  */
 }
 
 void PatternManager::echoPatternTable() {
@@ -558,7 +570,9 @@ bool PatternManager::loadNextFrame(LEDStrip * strip) {
     if (isTransitioning) needsUpdate |= prev.needsUpdate();
   }
 
-  if (!needsUpdate && millis() - this->lastFrame < 30) return false;
+  if (!needsUpdate && millis() - this->lastFrame < 30) {
+    return false;
+  }
 
   if (this->freezeFrameIndex >= 0) {
     current.loadFrame(strip,this->flash, 1, this->freezeFrameIndex);

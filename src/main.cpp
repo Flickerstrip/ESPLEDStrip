@@ -25,6 +25,7 @@
 #include "PatternMetadata.h"
 #include "RunningPattern.h"
 #include "util.h"
+#include "tests.h"
 #include "version.h"
 #include "networkutil.h"
 #include "PatternManager.h"
@@ -156,6 +157,8 @@ void setup() {
 
   handleStartupHold();
 
+  //testAll(flash,strip);
+
   createMacString();
 
   Serial.println("\n\n");
@@ -263,7 +266,7 @@ void startEmergencyFirmwareMode() {
   IPAddress ip = IPAddress(192, 168, 1, 1);
   IPAddress netmask = IPAddress(255, 255, 255, 0);
 
-  WiFi.disconnect();
+  WiFi.mode(WIFI_OFF);
   WiFi.mode(WIFI_AP);
   WiFi.softAPConfig(ip,ip,netmask);
   WiFi.softAP("FlickerstripRecovery");
@@ -342,6 +345,12 @@ bool loadConfiguration() {
 void saveConfiguration() {
   EEPROM.begin(EEPROM_SIZE);
   for (int i=0; i<sizeof(Configuration); i++) {
+    /*
+    Serial.print("writing ");
+    Serial.print(i);
+    Serial.print(" = ");
+    Serial.println(((byte *)(&config))[i]);
+    */
     EEPROM.write(i,((byte *)(&config))[i]);
   }
   EEPROM.end();
@@ -1118,7 +1127,7 @@ bool doConnect() {
   Serial.print("Connecting to ssid: ");
   Serial.println(config.ssid);
   accessPoint = false;
-  WiFi.disconnect();
+  WiFi.mode(WIFI_OFF);
   WiFi.mode(WIFI_STA);
   WiFi.begin(config.ssid, config.password);
 
@@ -1133,8 +1142,7 @@ bool doConnect() {
 }
 
 void forgetNetwork() {
-  WiFi.softAPdisconnect();
-  WiFi.disconnect();
+  WiFi.mode(WIFI_OFF);
   config.ssid[0] = 0;
   config.password[0] = 0;
   saveConfiguration();
@@ -1145,7 +1153,7 @@ bool createAccessPoint() {
   IPAddress ip = IPAddress(192, 168, 1, 1);
   IPAddress netmask = IPAddress(255, 255, 255, 0);
 
-  WiFi.disconnect();
+  WiFi.mode(WIFI_OFF);
   WiFi.mode(WIFI_AP);
   WiFi.softAPConfig(ip,ip,netmask);
   WiFi.softAP(defaultNetworkName);
@@ -1174,11 +1182,14 @@ void loop() {
     if (WiFi.status() != WL_CONNECTED) createAccessPoint();
 
     startSSDP();
+
+    Serial.println("server begining");
     server.begin();
     //UDP seems to be unstable.. TODO investigate why
     udp.begin(2836);
 
     long lastRequest = millis();
+    Serial.println("main loop begin");
     while(accessPoint || WiFi.status() == WL_CONNECTED) {
       //Attempt to reconnect to the parent network periodially if we haven't received any requests lately
       if (accessPoint && millis() - lastRequest > NETWORK_RETRY) reconnect = true;
@@ -1188,8 +1199,7 @@ void loop() {
 
       //  Reconnect
       if (reconnect) {
-        WiFi.softAPdisconnect();
-        WiFi.disconnect();
+        WiFi.mode(WIFI_OFF);
         Serial.println("reconnecting...");
         return;
       }

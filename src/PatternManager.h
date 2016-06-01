@@ -17,7 +17,7 @@
 
 void debugHex(const char *buf, int len);
 
-#define EEPROM_PATTERNS_START 0x100
+#define EEPROM_PATTERNS_START 0x200
 #define EEPROM_TEST_PATTERN 0xf0
 #define MAXIMUM_PATTERN_BUFFER 450
 
