@@ -68,7 +68,6 @@ void RunningPattern::loadFrame(LEDStrip * strip, M25PXFlashMemory * flash, float
 
 void RunningPattern::loadNextFrame(LEDStrip * strip, M25PXFlashMemory * flash, float multiplier) {
   if (this->pattern == NULL) return;
-  Serial.println("rp load next frame");
 
   this->loadFrame(strip,flash,multiplier,this->currentFrame);
 
