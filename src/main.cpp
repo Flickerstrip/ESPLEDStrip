@@ -266,8 +266,8 @@ void startEmergencyFirmwareMode() {
   IPAddress ip = IPAddress(192, 168, 1, 1);
   IPAddress netmask = IPAddress(255, 255, 255, 0);
 
-  WiFi.mode(WIFI_OFF);
   WiFi.mode(WIFI_AP);
+  delay(50);
   WiFi.softAPConfig(ip,ip,netmask);
   WiFi.softAP("FlickerstripRecovery");
 
@@ -1127,15 +1127,23 @@ bool doConnect() {
   Serial.print("Connecting to ssid: ");
   Serial.println(config.ssid);
   accessPoint = false;
-  WiFi.mode(WIFI_OFF);
   WiFi.mode(WIFI_STA);
+  delay(50);
   WiFi.begin(config.ssid, config.password);
 
   connecting = true;
-  while (WiFi.status() == WL_DISCONNECTED) tick();
+  wl_status_t status = WiFi.status();
+  while(status != WL_CONNECTED && status != WL_NO_SSID_AVAIL && status != WL_CONNECT_FAILED) {
+      tick();
+      delay(200);
+      status = WiFi.status();
+  }
   connecting = false;
 
-  if (WiFi.status() != WL_CONNECTED) return false;
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("connection failed.. returning");
+    return false;
+  }
   Serial.print("Connected with IP:");
   Serial.println(WiFi.localIP());
   return true;
@@ -1153,8 +1161,8 @@ bool createAccessPoint() {
   IPAddress ip = IPAddress(192, 168, 1, 1);
   IPAddress netmask = IPAddress(255, 255, 255, 0);
 
-  WiFi.mode(WIFI_OFF);
   WiFi.mode(WIFI_AP);
+  delay(50);
   WiFi.softAPConfig(ip,ip,netmask);
   WiFi.softAP(defaultNetworkName);
 
@@ -1183,13 +1191,11 @@ void loop() {
 
     startSSDP();
 
-    Serial.println("server begining");
     server.begin();
     //UDP seems to be unstable.. TODO investigate why
     udp.begin(2836);
 
     long lastRequest = millis();
-    Serial.println("main loop begin");
     while(accessPoint || WiFi.status() == WL_CONNECTED) {
       //Attempt to reconnect to the parent network periodially if we haven't received any requests lately
       if (accessPoint && millis() - lastRequest > NETWORK_RETRY) reconnect = true;

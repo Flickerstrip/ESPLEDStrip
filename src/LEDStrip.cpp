@@ -11,7 +11,6 @@ LEDStrip::LEDStrip() {
 }
 
 void LEDStrip::begin(const uint8_t pin) {
-  Serial.println("ledstrip begin");
   this->ledBuffer = new CRGB[this->length];
 
   this->controller = &FastLED.addLeds<WS2812B, LED_STRIP, GRB>(this->ledBuffer, this->length);
