@@ -53,6 +53,6 @@ else
     cp $ROOT/releases/$RELEASE.bin $SITEROOT/firmware/$RELEASE.bin
 
     UNIXNOW=`date +%s`
-    echo "{'latest':'$RELEASE.bin','updated':'$UNIXNOW'}" > $SITEROOT/firmware/$RELEASE.bin
+    echo "{'latest':'$RELEASE.bin','updated':'$UNIXNOW'}" > $SITEROOT/firmware/latest.json
 fi
 
