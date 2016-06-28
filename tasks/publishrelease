@@ -35,7 +35,7 @@ then
     echo "Publish release cancelled"
 else
     blue "Building project"
-    (cd $ROOT; make -B)
+    (cd $ROOT; platformio run; cp $ROOT/.pioenvs/esp12e/firmware.bin $ROOT/releases/$RELEASE.bin)
 
     # Generate json body
     DATA_FILE=/tmp/publishreleasedata.json
