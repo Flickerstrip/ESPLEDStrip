@@ -867,17 +867,6 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
   if (strcmp(urlval,"/update") == 0) {
     Serial.println("Updating firmware!!");
 
-//    char miniBuf[1000];
-//    int bodyRead = 0;
-//    while(true) {
-//      int newRead = readBytes(client,miniBuf,1000,1000);
-//      if (newRead == 0) break;
-//      bodyRead += newRead;
-//    }
-//
-//    Serial.print("Read: ");
-//    Serial.println(bodyRead);
-
     loadFirmware(client,contentLength);
     sendErr(&client,"Update failed");
     return true;
