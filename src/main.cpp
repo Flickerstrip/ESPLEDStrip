@@ -13,7 +13,7 @@
 #include <ESP8266HTTPUpdateServer.h>
 #include <ArduinoJson.h>
 
-//#define FASTLED_ESP8266_RAW_PIN_ORDER
+#define FASTLED_ESP8266_RAW_PIN_ORDER
 #include "FastLED.h"
 
 //Libraries maintained by Flickerstrip

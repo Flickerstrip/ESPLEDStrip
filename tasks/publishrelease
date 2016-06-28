@@ -4,6 +4,7 @@
 ROOT=$(cd `dirname "${BASH_SOURCE[0]}"`/.. && pwd)
 REPO=Flickerstrip/FlickerstripFirmware
 RELEASE=`git describe --abbrev=0`
+SITEROOT=/Users/julian/Documents/Programming/flickerstrip.com
   
 uploadFile() {
     FILE_PATH=$1
@@ -47,5 +48,11 @@ else
 
     blue "Uploading binary"
     uploadFile $ROOT/releases/$RELEASE.bin
+    
+    #copy to site root
+    cp $ROOT/releases/$RELEASE.bin $SITEROOT/firmware/$RELEASE.bin
+
+    UNIXNOW=`date +%s`
+    echo "{'latest':'$RELEASE.bin','updated':'$UNIXNOW'}" > $SITEROOT/firmware/$RELEASE.bin
 fi
 
