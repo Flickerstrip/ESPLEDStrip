@@ -1,1 +1,1 @@
-const char GIT_CURRENT_VERSION[] = "v0.3.4";
+const char GIT_CURRENT_VERSION[] = "v0.3.5";
