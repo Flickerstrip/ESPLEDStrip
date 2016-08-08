@@ -174,7 +174,10 @@ void PatternManager::clearPatterns() {
     uint32_t first = this->patterns[i].address & 0xfffff000;
     uint32_t count = (this->patterns[i].len / 0x1000) + 1;
     for (int l=0; l<count; l++) {
-      this->flash->eraseSubsector(first+l);
+      Serial.print("Erasing subsector: ");
+      uint32_t addr = first+(0x1000 * l);
+      Serial.println(addr,HEX);
+      this->flash->eraseSubsector(addr);
     }
   }
 
@@ -249,9 +252,10 @@ void PatternManager::deletePattern(byte n) {
   */
 
   for (int l=0; l<count; l++) {
-    //Serial.println("Erasing subsector: ");
-    //Serial.println(first+l,HEX);
-    this->flash->eraseSubsector(first+l);
+    Serial.print("Erasing subsector: ");
+    uint32_t addr = first+(0x1000 * l);
+    Serial.println(addr,HEX);
+    this->flash->eraseSubsector(addr);
   }
 
   EEPROM.begin(EEPROM_SIZE);
@@ -380,14 +384,16 @@ void PatternManager::saveLedPatternBody(int pattern, uint32_t patternStartPage, 
   //                                   metadata page
   //                                        |
   uint32_t writeLocation = pat->address + 0x100 + patternStartPage*0x100;
-  //Serial.print("pattern page: ");
-  //Serial.println(patternStartPage);
-  //Serial.print("len: ");
-  //Serial.println(len);
-  //Serial.print("address: ");
-  //Serial.println(pat->address);
-  //Serial.print("writing location: ");
-  //Serial.println(writeLocation);
+  /*
+  Serial.print("Page: ");
+  Serial.print(patternStartPage);
+  Serial.print(" Len: ");
+  Serial.print(len);
+  Serial.print(" Addr: ");
+  Serial.print(pat->address);
+  Serial.print(" Loc: ");
+  Serial.println(writeLocation);
+  */
   this->flash->programBytes(writeLocation,payload,len);
 }
 
@@ -428,11 +434,13 @@ void PatternManager::saveTestPattern(PatternMetadata * pat) {
       //Serial.println(first);
       //Serial.print("count: ");
       //Serial.println(count);
-      for (int l=0; l<count; l++) {
-        //Serial.println("Erasing subsector: ");
-        //Serial.println(first+l,HEX);
-        this->flash->eraseSubsector(first+l);
+      for (uint32_t l=0; l<count; l++) {
+        Serial.print("Erasing subsector: ");
+        uint32_t addr = first+(0x1000 * l);
+        Serial.println(addr,HEX);
+        this->flash->eraseSubsector(addr);
       }
+      Serial.println("done erasing test pattern..");
   }
 
 
@@ -460,10 +468,13 @@ void PatternManager::saveTestPattern(PatternMetadata * pat) {
 }
 
 void PatternManager::saveTestPatternBody(uint32_t patternStartPage, byte * payload, uint32_t len) {
-  //Serial.print("saving test body: ");
-  //Serial.println(patternStartPage);
-
   uint32_t writeLocation = testPattern.address + 0x100 + patternStartPage*0x100;
+  Serial.print("saving test body: ");
+  Serial.print(patternStartPage);
+  Serial.print(" [");
+  Serial.print(writeLocation);
+  Serial.print("]");
+  Serial.println();
   this->flash->programBytes(writeLocation,payload,len);
 }
 

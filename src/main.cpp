@@ -1036,6 +1036,10 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
         int pageReadSize = 0x100;
         if (remaining < pageReadSize) pageReadSize = remaining;
         readSize = readBytes(client,(char*)&pagebuffer,0x100,1000);
+        /*
+        Serial.println("read page: ");
+        debugHex((char*)&pagebuffer,0x100);
+        */
         if (readSize != pageReadSize) {
           Serial.println("Short read!");
           return false;
