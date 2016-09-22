@@ -21,6 +21,9 @@ public:
   void setEnd(int end);
   void setReverse(bool reverse);
   int getLength();
+  int getStart();
+  int getEnd();
+
   void clear();
   void setPixel(int i, byte r, byte g, byte b);
   void addPixel(int i, byte r, byte g, byte b);

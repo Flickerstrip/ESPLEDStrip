@@ -2,6 +2,7 @@
 .*.swp
 releases
 .DS_Store
+_*
 build
 credentials.txt
 /lib

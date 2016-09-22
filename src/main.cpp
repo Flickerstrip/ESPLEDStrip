@@ -53,9 +53,6 @@ byte clicksTriggered = 0;
 bool connecting = false;
 long NETWORK_RETRY = 1000*60*3; //retry connection every 3 minutes
 
-const byte BUTTON_UP = 1;
-const byte BUTTON_DOWN = 0;
-
 #define SSID_LENGTH 50
 #define PASSWORD_LENGTH 50
 #define NAME_LENGTH 50
@@ -73,18 +70,23 @@ struct Configuration {
   int stripStart;
   int stripEnd;
   int fadeDuration;
+  byte failedBootCounter;
   char version[20];
 };
 
 bool powerOn = true;
+bool stableUptime = false;
 
 const byte FLAG_CONFIGURED = 7;
 const byte FLAG_REVERSED = 6;
+const byte FLAG_SELF_TEST = 5;
 
 const byte FLAG_CONFIGURED_CONFIGURED = 0;
 const byte FLAG_CONFIGURED_UNCONFIGURED = 1;
 const byte FLAG_REVERSED_FALSE = 0;
 const byte FLAG_REVERSED_TRUE = 1;
+const byte FLAG_SELF_TEST_DONE = 0;
+const byte FLAG_SELF_TEST_NEEDED = 1; //set by cradle
 
 struct PacketStructure {
 	uint32_t type;
@@ -108,6 +110,7 @@ byte heldTriggered = 0;
 
 //TODO create an H file? reorganize this all
 void setup();
+void initializeConfiguration();
 void createMacString();
 void handleStartupHold();
 void startEmergencyFirmwareMode();
@@ -148,16 +151,47 @@ bool doConnect();
 void forgetNetwork();
 bool createAccessPoint();
 void loop();
+bool detectCradle();
+
+bool detectCradle() {
+  pinMode(CRADLE_DETECT,INPUT_PULLUP);
+  delay(10);
+  bool isCradled = digitalRead(CRADLE_DETECT) == 0;
+
+  pinMode(CRADLE_DETECT,OUTPUT); //TODO this is messy, we can do this because we know the cradle pin is being used as SPI_SCK and is an output.. but otherwise we're clobbering the pin mode
+  delay(10);
+  return isCradled;
+}
+
+int bitset(int number, byte bit, bool value) {
+  number ^= (-value ^ number) & (1 << bit);
+  return number;
+}
+
+bool checkbit(int number, byte bit) {
+  return (number >> bit) & 1;
+}
 
 void setup() {
   Serial.begin(115200);
+  if (detectCradle()) {
+    Serial.println("we're in cradle mode.. infinite loop time!");
+    pinMode(CRADLE_DONE_LED,OUTPUT);
+    delay(10);
+
+    initializeConfiguration();
+    config.flags = bitset(config.flags,FLAG_SELF_TEST,FLAG_SELF_TEST_NEEDED);
+    saveConfiguration();
+
+    digitalWrite(CRADLE_DONE_LED,0);
+    while(1) delay(100);
+  }
+
   pinMode(LED_STRIP,OUTPUT);
   pinMode(BUTTON_LED,OUTPUT);
   pinMode(BUTTON,INPUT);
 
   handleStartupHold();
-
-  //testAll(flash,strip);
 
   createMacString();
 
@@ -166,23 +200,20 @@ void setup() {
   Serial.print("Flickerstrip Firmware Version: ");
   Serial.println(GIT_CURRENT_VERSION);
 
-  //Load configuration returns false if configuration is not set
-  if (!loadConfiguration()) {
-    Serial.println("Initializing factory settings");
-    patternManager.resetPatternsToDefault();
+  initializeConfiguration();
 
-    loadDefaultConfiguration();
-    saveConfiguration();
+  strip.begin(LED_STRIP);
+  if (checkbit(config.flags,FLAG_SELF_TEST) == FLAG_SELF_TEST_NEEDED) {
+    testAll(&flash,&strip);
+    factoryReset(); //we need to factory reset after the self test because it clobbers flash memory
   }
 
-  /*
-  Serial.print("len: ");
-  Serial.println(config.stripLength);
-  Serial.print("start: ");
-  Serial.println(config.stripStart);
-  Serial.print("end: ");
-  Serial.println(config.stripEnd);
-  */
+  if (config.failedBootCounter == 0) { //we've failed to boot a few times.. lets factory reset
+    factoryReset();
+  } else {
+    config.failedBootCounter--; //decrement the failed boot counter. This is reset when stability is achived
+    saveConfiguration();
+  }
 
   //set up strip
   if (config.stripLength > MAX_STRIP_LENGTH) config.stripLength = MAX_STRIP_LENGTH;
@@ -191,7 +222,6 @@ void setup() {
   strip.setEnd(config.stripEnd);
   strip.setReverse((config.flags >> FLAG_REVERSED) & 0x1);
   patternManager.setTransitionDuration(config.fadeDuration);
-  strip.begin(LED_STRIP);
 
   if (strcmp(config.version,GIT_CURRENT_VERSION) != 0) {
     Serial.println("Firmware version updated!");
@@ -208,7 +238,18 @@ void setup() {
   pingDelay = 0;
   patternManager.selectPattern(config.selectedPattern);
 
-  digitalWrite(BUTTON_LED,1);
+  digitalWrite(BUTTON_LED,BUTTON_LED_ON);
+}
+
+void initializeConfiguration() {
+  //Load configuration returns false if configuration is not set
+  if (!loadConfiguration()) {
+    Serial.println("Initializing factory settings");
+    patternManager.resetPatternsToDefault();
+
+    loadDefaultConfiguration();
+    saveConfiguration();
+  }
 }
 
 void createMacString() {
@@ -327,8 +368,10 @@ void loadDefaultConfiguration() {
   config.stripStart = 0;
   config.stripEnd = -1;
   config.fadeDuration = 0;
-  config.flags = (FLAG_CONFIGURED_CONFIGURED << FLAG_CONFIGURED) & //Set configured bit
-                 (FLAG_REVERSED_FALSE << FLAG_REVERSED); //Set reversed bit
+  config.failedBootCounter = 10;
+  config.flags = (FLAG_CONFIGURED_CONFIGURED << FLAG_CONFIGURED ) &      //Set configured bit
+                 (FLAG_REVERSED_FALSE        << FLAG_REVERSED   ) &               //Set reversed bit
+                 (FLAG_SELF_TEST_DONE        << FLAG_SELF_TEST  );               //Set self test bit
   memcpy(config.version,GIT_CURRENT_VERSION,strlen(GIT_CURRENT_VERSION)+1);
 }
 
@@ -609,6 +652,12 @@ void tick() {
   syncTick();
   buttonTick();
   ledTick();
+
+  if (!stableUptime && millis() > 7000) { //we've been up for 7 seconds, we're no longer suspicious of misbehavior
+    stableUptime = true;
+    config.failedBootCounter = 10;
+    saveConfiguration();
+  }
 }
 
 void buttonTick() {

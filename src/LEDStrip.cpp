@@ -5,8 +5,8 @@ LEDStrip::LEDStrip() {
   this->length = 1;
   this->ledBuffer = NULL;
   this->controller = NULL;
-  this->start = 0;
-  this->end = 1;
+  this->start = -1;
+  this->end = -1;
   this->reverse = false;
 }
 
@@ -23,19 +23,16 @@ void LEDStrip::setLength(int length) {
   if (this->ledBuffer != NULL) {
     delete [] this->ledBuffer;
   }
+  this->ledBuffer = new CRGB[this->length];
   this->clear();
+  this->controller->setLeds(this->ledBuffer,this->length);
 }
 
 void LEDStrip::setStart(int start) {
-  this->clear();
-  this->show();
   this->start = start;
 }
 
 void LEDStrip::setEnd(int end) {
-  this->clear();
-  this->show();
-  if (end == -1) end = this->length;
   this->end = end;
 }
 
@@ -47,6 +44,18 @@ int LEDStrip::getLength() {
   return this->length;
 }
 
+int LEDStrip::getStart() {
+  int start = this->start;
+  if (start == -1) start = 0;
+  return start;
+}
+
+int LEDStrip::getEnd() {
+  int end = this->end;
+  if (end == -1) end = this->length;
+  return end;
+}
+
 void LEDStrip::clear() {
   if (this->ledBuffer == NULL) return;
   for (int i=0; i<this->length; i++) {
@@ -55,12 +64,12 @@ void LEDStrip::clear() {
 }
 
 void LEDStrip::setPixel(int i, byte r, byte g, byte b) {
-  int index = i + this->start;
-  if (index > this->end-1) return;
+  int index = i + this->getStart();
+  if (index > this->getEnd()-1) return;
 
   if (this->reverse) {
-    index = this->end - i - 1;
-    if (index < this->start) return;
+    index = this->getEnd() - i - 1;
+    if (index < this->getStart()) return;
   }
 
   /*
@@ -78,12 +87,12 @@ void LEDStrip::setPixel(int i, byte r, byte g, byte b) {
 }
 
 void LEDStrip::addPixel(int i, byte r, byte g, byte b) {
-  int index = i + this->start;
-  if (index > this->end-1) return;
+  int index = i + this->getStart();
+  if (index > this->getEnd()-1) return;
 
   if (this->reverse) {
-    index = this->end - i - 1;
-    if (index < this->start) return;
+    index = this->getEnd() - i - 1;
+    if (index < this->getStart()) return;
   }
 
   this->ledBuffer[index].r = this->ledBuffer[index].r + r;

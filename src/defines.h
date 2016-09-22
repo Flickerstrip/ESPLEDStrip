@@ -30,7 +30,15 @@
   #define BUTTON 16
 #endif
 
+//These CRADLE defines are pins when we're in our programming jig/cradle
+#define CRADLE_DETECT 12
+#define CRADLE_DONE_LED 14
+
 #define BUTTON_LED_ON 1
 #define BUTTON_LED_OFF 0
+
+#define BUTTON_UP 1
+#define BUTTON_DOWN 0
+
 
 #define EEPROM_SIZE 4096
