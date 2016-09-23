@@ -40,5 +40,3 @@
 #define BUTTON_UP 1
 #define BUTTON_DOWN 0
 
-
-#define EEPROM_SIZE 4096

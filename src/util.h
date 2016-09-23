@@ -114,4 +114,19 @@ void debugHex(const char *buf, int len) {
     Serial.println();
 }
 
+void waitForGo() {
+    char buf[3];
+    while(1) {
+        while(Serial.available()) {
+            buf[0] = buf[1];
+            buf[1] = buf[2];
+            char c = Serial.read();
+            Serial.write(c);
+            buf[2] = c;
+            if (buf[0] == 'g' && buf[1] == 'o' && (buf[2] == '\n' || buf[2] == '\r')) return;
+        }
+    }
+
+}
+
 #endif

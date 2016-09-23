@@ -35,6 +35,8 @@ void testAll(M25PXFlashMemory* flash, LEDStrip* strip) {
         strip->show();
     }
 
+    testButton();
+
     Serial.println("Tests complete!");
 }
 

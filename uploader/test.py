@@ -9,8 +9,6 @@ import os
 
 ser = serial.Serial()
 ser.baudrate = 115200
-ser.port = '/dev/cu.usbserial-AL00P7CM'
-ser.port = '/dev/cu.usbserial-AL00P7CN'
 ser.port = '/dev/cu.usbserial-AL00P7CO'
 ser.bytesize=8;
 ser.parity='N';
@@ -65,8 +63,6 @@ def printOrd(subj):
     print(b);
 
 def validateResponse(thisEntry,s):
-    if (s.find("identity: ") != 0): return False;
-    s = s[len("identity: "):];
     s = s.split(" ");
     return s[0] == thisEntry["uid"] and int(s[1]) == thisEntry["batch"] and int(s[2]) == thisEntry["unit"];
 
@@ -100,9 +96,8 @@ def main(ser):
     ser.write("identify:%s,%s,%s\n" % (thisEntry["uid"],thisEntry["batch"],thisEntry["unit"]));
     ser.readline(); ser.readline(); #Skip over echoed response
     ser.write("checkidentity\n");
-    ser.readline()
+    readUntil("identity: ",False);
     checkme = ser.readline().strip()
-    print("checkme: ",checkme);
     if validateResponse(thisEntry,checkme):
         print("valid!");
     else:

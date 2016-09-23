@@ -1,6 +1,8 @@
 #ifndef main_h
 #define main_h
 
+#include "EEPROMLayout.h"
+
 void setup();
 void initializeConfiguration();
 void createMacString();

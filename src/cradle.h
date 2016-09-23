@@ -7,6 +7,8 @@
 bool detectCradle();
 void handleCradleSerial();
 void cradleSerialLine();
+bool isOTPReady();
+void handleOTPWrite(M25PXFlashMemory* flash);
 
 bool done;
 
@@ -18,8 +20,12 @@ struct Identity {
 
 Identity ident;
 
-void handleCradle() {
-    if (!detectCradle()) return;
+//Note: While in cradle mode, the SPI bus is unavailable (eg. flash memory)
+void handleCradle(M25PXFlashMemory* flash) {
+    if (!detectCradle()) {
+        if (isOTPReady()) handleOTPWrite(flash);
+        return;
+    }
 
     Serial.println("we're in cradle mode.. infinite loop time!");
     Serial.println("ready");
@@ -27,19 +33,19 @@ void handleCradle() {
     digitalWrite(CRADLE_DONE_LED,1);
     delay(10);
 
+    //Mark the configuration as requiring the self-test
     initializeConfiguration();
     config.flags = bitset(config.flags,FLAG_SELF_TEST,FLAG_SELF_TEST_NEEDED);
     saveConfiguration();
 
-    done = false;
     createMacString();
-    while(!done) {
+
+    if (isOTPReady()) digitalWrite(CRADLE_DONE_LED,0); //If the OTP is ready, we should display a green light
+
+    while(1) {
         handleCradleSerial();
         delay(1);
     }
-
-    digitalWrite(CRADLE_DONE_LED,0);
-    while(1) delay(100);
 }
 
 void cradleSerialLine() {
@@ -68,7 +74,18 @@ void cradleSerialLine() {
         Serial.print(" ");
         Serial.print(ident.unit);
         Serial.println();
+        EEPROM.begin(EEPROM_OTP+EEPROM_PAGE_SIZE);
+        for (int i=0; i<sizeof(Identity); i++) {
+            EEPROM.write(EEPROM_OTP+i,*((byte*)&ident+i));
+        }
+        EEPROM.end();
     } else if (strstr(serialBuffer,"checkidentity") != NULL) {
+        //Load identity from EEPROM
+        EEPROM.begin(EEPROM_OTP+EEPROM_PAGE_SIZE);
+        for (int i=0; i<sizeof(Identity); i++) {
+            ((byte*)&ident)[i] = EEPROM.read(EEPROM_OTP+i);
+        }
+        EEPROM.end();
         Serial.print("identity: ");
         Serial.print(ident.uid);
         Serial.print(" ");
@@ -77,8 +94,9 @@ void cradleSerialLine() {
         Serial.print(ident.unit);
         Serial.println();
     } else if (strstr(serialBuffer,"done") != NULL) {
-        done = true;
+        digitalWrite(CRADLE_DONE_LED,0); //Cradle computer can tell us when we're done, display the light
     }
+    serialLine();
 }
 
 void handleCradleSerial() {
@@ -106,6 +124,44 @@ bool detectCradle() {
     pinMode(CRADLE_DETECT,OUTPUT); //TODO this is messy, we can do this because we know the cradle pin is being used as SPI_SCK and is an output.. but otherwise we're clobbering the pin mode
     delay(10);
     return isCradled;
+}
+
+bool isOTPReady() {
+    EEPROM.begin(EEPROM_OTP+EEPROM_PAGE_SIZE);
+    for (int i=0; i<sizeof(Identity); i++) {
+        ((byte*)&ident)[i] = EEPROM.read(EEPROM_OTP+i);
+    }
+    EEPROM.end();
+
+    return ((byte*)&ident)[0] != 0xff;
+}
+
+void handleOTPWrite(M25PXFlashMemory* flash) { //Only executes if cradle is not active
+    Serial.println("\n\n");
+
+    byte otpbuf[65];
+
+    flash->readOTP(0,(byte*)&otpbuf,65);
+    if (otpbuf[0] != 0xff) {
+        Serial.println("OTP already written.. but EEPROM contains OTP. Clearing EEPROM OTP");
+    } else {
+        Serial.println("OTP found in EEPROM, writing it to the OTP");
+
+        //Program the OTP
+        EEPROM.begin(EEPROM_OTP+EEPROM_PAGE_SIZE);
+        for (int i=0; i<sizeof(Identity); i++) otpbuf[i] = EEPROM.read(EEPROM_OTP+i);
+        EEPROM.end();
+
+        flash->programOTP(0,(byte*)&otpbuf,sizeof(Identity));
+
+        //Freeze the OTP
+        flash->freezeOTP();
+    }
+
+    //Clear the OTP from EEPROM
+    EEPROM.begin(EEPROM_OTP+EEPROM_PAGE_SIZE);
+    for (int i=0; i<sizeof(Identity); i++) EEPROM.write(EEPROM_OTP+i,0xff);
+    EEPROM.end();
 }
 
 #endif

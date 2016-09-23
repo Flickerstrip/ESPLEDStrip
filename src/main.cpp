@@ -83,7 +83,7 @@ byte heldTriggered = 0;
 
 void setup() {
   Serial.begin(115200);
-  handleCradle();
+  handleCradle(&flash);
 
   pinMode(LED_STRIP,OUTPUT);
   pinMode(BUTTON_LED,OUTPUT);
@@ -344,6 +344,10 @@ void serialLine() {
     ESP.restart();
   } else if (strstr(serialBuffer,"factory") != NULL) {
     factoryReset();
+  } else if (strstr(serialBuffer,"test") != NULL) {
+    config.flags = bitset(config.flags,FLAG_SELF_TEST,FLAG_SELF_TEST_NEEDED);
+    saveConfiguration();
+    ESP.restart();
   } else if (strstr(serialBuffer,"reboot") != NULL) {
     ESP.restart();
   } else if (strstr(serialBuffer,"config:") != NULL) {
