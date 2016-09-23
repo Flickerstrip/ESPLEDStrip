@@ -30,22 +30,27 @@
 #include "networkutil.h"
 #include "PatternManager.h"
 #include "CaptivePortalConfigurator.h"
+#include "main.h"
+#include "bitutil.h"
+#include "configuration.h"
+#include "cradle.h"
 
 // use ESP.getResetReason() TODO
 
 #define MAX_STRIP_LENGTH 750
 M25PXFlashMemory flash(SPI_SCK,SPI_MOSI,SPI_MISO,MEM_CS);
 LEDStrip strip;
+
 PatternManager patternManager(&flash);
-//CaptivePortalConfigurator cpc("esp8266confignetwork");
-char defaultNetworkName[] = "Flickerstrip";
+
 WiFiServer server(80);
 WiFiUDP udp;
+
 #define BUFFER_SIZE 3000
 char buf[BUFFER_SIZE];
 
+char defaultNetworkName[] = "Flickerstrip";
 long lastSwitch = 0;
-char mac[20];
 bool disconnect = false;
 bool reconnect = false;
 long buttonDown = -1;
@@ -53,40 +58,9 @@ byte clicksTriggered = 0;
 bool connecting = false;
 long NETWORK_RETRY = 1000*60*3; //retry connection every 3 minutes
 
-#define SSID_LENGTH 50
-#define PASSWORD_LENGTH 50
-#define NAME_LENGTH 50
 bool debug = true;
-struct Configuration {
-  char ssid[SSID_LENGTH];
-  char password[PASSWORD_LENGTH];
-  char stripName[NAME_LENGTH];
-  char groupName[NAME_LENGTH];
-  byte selectedPattern;
-  byte brightness;
-  byte flags;
-  int cycle;
-  int stripLength;
-  int stripStart;
-  int stripEnd;
-  int fadeDuration;
-  byte failedBootCounter;
-  char version[20];
-};
-
 bool powerOn = true;
 bool stableUptime = false;
-
-const byte FLAG_CONFIGURED = 7;
-const byte FLAG_REVERSED = 6;
-const byte FLAG_SELF_TEST = 5;
-
-const byte FLAG_CONFIGURED_CONFIGURED = 0;
-const byte FLAG_CONFIGURED_UNCONFIGURED = 1;
-const byte FLAG_REVERSED_FALSE = 0;
-const byte FLAG_REVERSED_TRUE = 1;
-const byte FLAG_SELF_TEST_DONE = 0;
-const byte FLAG_SELF_TEST_NEEDED = 1; //set by cradle
 
 struct PacketStructure {
 	uint32_t type;
@@ -99,7 +73,6 @@ long lastSyncSent;
 long lastPingCheck;
 int pingDelay;
 
-Configuration config;
 
 /////////////
 bool accessPoint = false;
@@ -108,84 +81,9 @@ bool ignoreConfiguredNetwork = false;
 byte heldTriggered = 0;
 /////////////
 
-//TODO create an H file? reorganize this all
-void setup();
-void initializeConfiguration();
-void createMacString();
-void handleStartupHold();
-void startEmergencyFirmwareMode();
-void blinkCount(byte count, int on, int off);
-void fillStrip(byte r, byte g, byte b);
-void factoryReset();
-void loadDefaultConfiguration();
-bool loadConfiguration();
-void saveConfiguration();
-void setReversed(bool reversed);
-bool isReversed();
-void setNetwork(String ssid,String password);
-void handleSerial();
-void serialLine();
-void selectPattern(byte pattern);
-void sendStatus(WiFiClient * client);
-void sendStatus(WiFiClient * client);
-void patternTick();
-void nextMode();
-void nextModeWithToggle();
-bool isPowerOn();
-void toggleStrip(bool on);
-void tick();
-void buttonTick();
-void setPulse(bool doPulse);
-void setLed(byte n);
-void setLedImpl(byte n);
-void ledTick();
-void broadcastUdp(char * buf, int len);
-void syncTick();
-void handleUdpPacket(char * charbuf, int len);
-void loadFirmware(WiFiClient & client, uint32_t uploadSize);
-int getPostParam(const char * content, const char * key, char * dst, int dstSize);
-bool handleRequest(WiFiClient & client, char * buf, int n);
-void handleWebClient(WiFiClient & client);
-void startSSDP();
-bool doConnect();
-void forgetNetwork();
-bool createAccessPoint();
-void loop();
-bool detectCradle();
-
-bool detectCradle() {
-  pinMode(CRADLE_DETECT,INPUT_PULLUP);
-  delay(10);
-  bool isCradled = digitalRead(CRADLE_DETECT) == 0;
-
-  pinMode(CRADLE_DETECT,OUTPUT); //TODO this is messy, we can do this because we know the cradle pin is being used as SPI_SCK and is an output.. but otherwise we're clobbering the pin mode
-  delay(10);
-  return isCradled;
-}
-
-int bitset(int number, byte bit, bool value) {
-  number ^= (-value ^ number) & (1 << bit);
-  return number;
-}
-
-bool checkbit(int number, byte bit) {
-  return (number >> bit) & 1;
-}
-
 void setup() {
   Serial.begin(115200);
-  if (detectCradle()) {
-    Serial.println("we're in cradle mode.. infinite loop time!");
-    pinMode(CRADLE_DONE_LED,OUTPUT);
-    delay(10);
-
-    initializeConfiguration();
-    config.flags = bitset(config.flags,FLAG_SELF_TEST,FLAG_SELF_TEST_NEEDED);
-    saveConfiguration();
-
-    digitalWrite(CRADLE_DONE_LED,0);
-    while(1) delay(100);
-  }
+  handleCradle();
 
   pinMode(LED_STRIP,OUTPUT);
   pinMode(BUTTON_LED,OUTPUT);
@@ -418,8 +316,6 @@ void setNetwork(String ssid,String password) {
   password.toCharArray((char *)&config.password,50);
 }
 
-char serialBuffer[100];
-char serialIndex = 0;
 void handleSerial() {
   if (Serial.available()) {
     while(Serial.available()) {

@@ -10,7 +10,7 @@ while true; do
             ((COUNT++))
             if [[ $COUNT -gt 2 ]]; then
                 echo "UPLOADING CODE"
-                ./esptool -vv -cd nodemcu -cb 115200 -cp $PORT -cf firmware.bin
+                ./esptool -vv -cd nodemcu -cb 115200 -cp $PORT -cf _firmware.bin
 
                 COUNT=-1
             fi
