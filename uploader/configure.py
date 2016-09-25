@@ -6,10 +6,14 @@ import time
 import uuid;
 import csv
 import os
+import re
+
+batch = int(sys.argv[1]);
+port = sys.argv[2];
 
 ser = serial.Serial()
 ser.baudrate = 115200
-ser.port = '/dev/cu.usbserial-AL00P7CO'
+ser.port = port;
 ser.bytesize=8;
 ser.parity='N';
 ser.stopbits=1;
@@ -32,6 +36,7 @@ def readUnitInformation():
                 "batch":int(row[2]),
                 "unit":int(row[3]),
                 "time":int(row[4]),
+                "note":row[5],
             });
     return info;
 
@@ -39,13 +44,16 @@ def writeUnitInformation(info):
     with open("units.csv", "wb") as csvfile:
         w = csv.writer(csvfile, delimiter=",", quotechar="'", quoting=csv.QUOTE_NONNUMERIC)
         for unit in info:
-            w.writerow([unit["mac"],unit["uid"],unit["batch"],unit["unit"],unit["time"]]);
+            w.writerow([unit["mac"],unit["uid"],unit["batch"],unit["unit"],unit["time"],unit["note"]]);
             
 
-def readUntil(sentinel,includeNewline):
+def readUntil(sentinel,includeNewline,timeout=3):
     buf = "";
+    now = time.time();
     while(True):
         buf += ser.read()
+        if (time.time() > now + timeout):
+            raise RuntimeError("timeout");
         if (buf.find(sentinel) > 0):
             break;
     if (includeNewline): ser.readline();
@@ -73,44 +81,60 @@ def main(ser):
     ser.write("mac\n");
     ser.readline() #echoed line
     mac = ser.readline().strip(); #mac address
+    if not re.match("[0-9a-f]{2}([-:])[0-9a-f]{2}(\\1[0-9a-f]{2}){4}$", mac.lower()):
+        raise RuntimeError("Failed to read mac address!");
 
     thisEntry = None;
     for unit in info:
         if (unit["mac"] == mac):
             thisEntry = unit;
 
-    if (not thisEntry):
+    if (thisEntry): index = info.index(thisEntry);
+
+    if (thisEntry and index >= len(info)-2):
+        print("Entry Found:");
+        thisEntry["time"] = int(time.time());
+        thisEntry["note"] = "reprogrammed";
+    else:
+        note = ""
+        if thisEntry: note="duplicate mac"
         thisEntry = {
             "mac":mac,
             "uid":str(uuid.uuid4()),
-            "batch":1,
+            "batch":batch,
             "unit":len(info)+1,
-            "time":int(time.time())
+            "time":int(time.time()),
+            "note":note
         };
         info.append(thisEntry);
-        print("Registered new Flickerstrip: %s" % thisEntry["uid"]);
-    else:
-        print("Entry Found: %s" % thisEntry["uid"]);
-        thisEntry["time"] = int(time.time());
+        print("Registered Flickerstrip:");
+
+    print("   MAC: %s" % thisEntry["mac"]);
+    print("   UID: %s" % thisEntry["uid"]);
+    print(" BATCH: %s" % thisEntry["batch"]);
+    print("  UNIT: %s" % thisEntry["unit"]);
 
     ser.write("identify:%s,%s,%s\n" % (thisEntry["uid"],thisEntry["batch"],thisEntry["unit"]));
     ser.readline(); ser.readline(); #Skip over echoed response
     ser.write("checkidentity\n");
     readUntil("identity: ",False);
     checkme = ser.readline().strip()
-    if validateResponse(thisEntry,checkme):
-        print("valid!");
-    else:
-        print("invalid!");
+    if not validateResponse(thisEntry,checkme):
+        raise RuntimeError("Validation failed");
 
     writeUnitInformation(info);
-
 
 ser.open()
 buf = "";
 try:
     main(ser);
 except KeyboardInterrupt:
-    sys.exit()
+    print("Terminated!");
+    sys.exit(1)
+except RuntimeError as er:
+    print("Error!",er);
+    sys.exit(1);
 finally:
     ser.close()
+
+sys.exit(0);

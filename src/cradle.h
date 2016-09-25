@@ -34,7 +34,9 @@ void handleCradle(M25PXFlashMemory* flash) {
     delay(10);
 
     //Mark the configuration as requiring the self-test
-    initializeConfiguration();
+    if (!loadConfiguration()) {
+        loadDefaultConfiguration();
+    }
     config.flags = bitset(config.flags,FLAG_SELF_TEST,FLAG_SELF_TEST_NEEDED);
     saveConfiguration();
 
