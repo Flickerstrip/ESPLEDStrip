@@ -12,6 +12,7 @@
 #include <ESP8266WebServer.h>
 #include <ESP8266HTTPUpdateServer.h>
 #include <ArduinoJson.h>
+#include "Base64.h"
 
 #define FASTLED_ESP8266_RAW_PIN_ORDER
 #include "FastLED.h"
@@ -967,6 +968,50 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
   } else if (strcmp(urlval,"/pattern/test") == 0 || strcmp(urlval,"/pattern/save") == 0) {
     bool isTestPattern = strcmp(urlval,"/pattern/test") == 0;
 
+    char body[contentLength+1];
+    readBytes(client,(char*)&body,contentLength,1000);
+    body[contentLength] = 0;
+
+    StaticJsonBuffer<2000> jsonBuffer; //TODO increase this? return an error for oversized?
+    JsonObject& root = jsonBuffer.parseObject(body);
+
+    PatternMetadata pat;
+    memcpy(pat.name,root["name"].asString(),16); //TODO fix me
+    pat.frames = root["frames"].as<uint16_t>();
+    pat.len = root["pixels"].as<uint16_t>() * pat.frames * 3;
+    pat.fps = root["fps"].as<uint16_t>();
+
+    const char * data = root["pixelData"].asString();
+
+    Serial.print("name: ");
+    Serial.println(pat.name);
+    Serial.print("frames: ");
+    Serial.println(pat.frames);
+    Serial.print("len: ");
+    Serial.println(pat.len);
+    Serial.print("fps: ");
+    Serial.println(pat.fps);
+
+    Serial.println("data: ");
+    Serial.println(data);
+
+    Serial.println("decoded data:");
+    int dataLength = strlen(data);
+    int decodedLength = Base64.decodedLength((char*)data, dataLength);
+    char decoded[decodedLength];
+    Base64.decode(decoded, (char*)data, dataLength);
+    debugHex(decoded,decodedLength);
+
+    patternManager.saveTestPattern(&pat);
+    for (int page=0; page<=decodedLength/0x100; page++) {
+      patternManager.saveTestPatternBody(page,(byte*)decoded+page*0x100,0x100);
+    }
+    patternManager.showTestPattern(true);
+
+    sendOk(&client);
+
+    /*
+
     //BE AWARE: word alignment seems to matter.. we're copying this to a different location to avoid pointer alignment issues
     PatternMetadata pat;
     int readSize = readBytes(client,(char*)&pat,sizeof(PatternMetadata),1000);
@@ -986,10 +1031,8 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
         int pageReadSize = 0x100;
         if (remaining < pageReadSize) pageReadSize = remaining;
         readSize = readBytes(client,(char*)&pagebuffer,0x100,1000);
-        /*
-        Serial.println("read page: ");
-        debugHex((char*)&pagebuffer,0x100);
-        */
+        //Serial.println("read page: ");
+        //debugHex((char*)&pagebuffer,0x100);
         if (readSize != pageReadSize) {
           Serial.println("Short read!");
           return false;
@@ -1006,10 +1049,8 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
         int pageReadSize = 0x100;
         if (remaining < pageReadSize) pageReadSize = remaining;
         readSize = readBytes(client,(char*)&pagebuffer,0x100,1000);
-        /*
-        Serial.println("read page: ");
-        debugHex((char*)&pagebuffer,0x100);
-        */
+        //Serial.println("read page: ");
+        //debugHex((char*)&pagebuffer,0x100);
         if (readSize != pageReadSize) {
           Serial.println("Short read!");
           return false;
@@ -1022,6 +1063,7 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
 
     client.flush();
     sendOk(&client);
+    */
   } else {
     char content[] = "Not Found";
     sendHttp(&client,404,"Not Found","text/plain",content);
