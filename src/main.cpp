@@ -137,6 +137,7 @@ void setup() {
   patternManager.selectPattern(config.selectedPattern);
 
   digitalWrite(BUTTON_LED,BUTTON_LED_ON);
+  Serial.println("ready");
 }
 
 void initializeConfiguration() {
