@@ -167,13 +167,6 @@ void PatternManager::resetPatternsToDefault() {
 
   byte patindex = this->saveLedPatternMetadata(&newpat);
   this->saveLedPatternBody(patindex,0,(byte*)this->buf,newpat.len);
-
-  //dump eeprom..
-  Serial.print("eeprom begin: ");
-  Serial.println(EEPROM_PATTERNS_START+EEPROM_PAGE_SIZE*EEPROM_PATTERNS_PAGES);
-  EEPROM.begin(EEPROM_SIZE); //IMPORTANT: Use EEPROM_SIZE or EEPROM will be cleared down to this parameter
-  debugHex((char*)(EEPROM.getDataPtr()+EEPROM_PATTERNS_START),100);
-  EEPROM.end();
 }
 
 void PatternManager::clearPatterns() {
@@ -327,9 +320,9 @@ byte PatternManager::saveLedPatternMetadata(PatternMetadata * pat) {
   pat->len += 0x100; //we're adding a page for metadata storage
 
   byte insert = findInsertLocation(pat->len);
-  Serial.print("inserting pattern at: ");
-  Serial.print(insert);
-  Serial.println();
+  //Serial.print("inserting pattern at: ");
+  //Serial.print(insert);
+  //Serial.println();
   if (insert == 0) {
       pat->address = 0;
   } else {
@@ -349,27 +342,27 @@ byte PatternManager::saveLedPatternMetadata(PatternMetadata * pat) {
   PatternReference ref;
   ref.address = pat->address;
   ref.len = pat->len;
-  Serial.print("Address: ");
-  Serial.print(ref.address);
-  Serial.println();
-  Serial.print("len: ");
-  Serial.print(ref.len);
-  Serial.println();
+  //Serial.print("Address: ");
+  //Serial.print(ref.address);
+  //Serial.println();
+  //Serial.print("len: ");
+  //Serial.print(ref.len);
+  //Serial.println();
   for (int i=0; i<sizeof(PatternReference); i++) {
-    Serial.print("Writing byte: ");
-    Serial.print(((byte *)(&ref))[i],HEX);
-    Serial.print(" to ");
-    Serial.print(EEPROM_PATTERNS_START+1+sizeof(PatternReference)*this->patternCount+i,DEC);
-    Serial.println();
+    //Serial.print("Writing byte: ");
+    //Serial.print(((byte *)(&ref))[i],HEX);
+    //Serial.print(" to ");
+    //Serial.print(EEPROM_PATTERNS_START+1+sizeof(PatternReference)*this->patternCount+i,DEC);
+    //Serial.println();
     EEPROM.write(EEPROM_PATTERNS_START+1+sizeof(PatternReference)*this->patternCount+i,((byte *)(&ref))[i]);
   }
 
   this->patternCount++;
-  Serial.print("Writing byte: ");
-  Serial.print(this->patternCount);
-  Serial.print(" to ");
-  Serial.print(EEPROM_PATTERNS_START);
-  Serial.println();
+  //Serial.print("Writing byte: ");
+  //Serial.print(this->patternCount);
+  //Serial.print(" to ");
+  //Serial.print(EEPROM_PATTERNS_START);
+  //Serial.println();
   EEPROM.write(EEPROM_PATTERNS_START,this->patternCount);
 
   EEPROM.end();
