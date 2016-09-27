@@ -12,7 +12,7 @@ PatternManager::PatternManager(M25PXFlashMemory * mem) {
 }
 
 void PatternManager::loadPatterns() {
-  EEPROM.begin(EEPROM_PATTERNS_START+EEPROM_PAGE_SIZE*EEPROM_PATTERNS_PAGES);
+  EEPROM.begin(EEPROM_SIZE); //IMPORTANT: Use EEPROM_SIZE or EEPROM will be cleared down to this parameter
 
   //The pattern count is stored in the first byte of the PATTERNS section of eeprom
   this->patternCount = EEPROM.read(EEPROM_PATTERNS_START);
@@ -171,7 +171,7 @@ void PatternManager::resetPatternsToDefault() {
   //dump eeprom..
   Serial.print("eeprom begin: ");
   Serial.println(EEPROM_PATTERNS_START+EEPROM_PAGE_SIZE*EEPROM_PATTERNS_PAGES);
-  EEPROM.begin(EEPROM_PATTERNS_START+EEPROM_PAGE_SIZE*EEPROM_PATTERNS_PAGES);
+  EEPROM.begin(EEPROM_SIZE); //IMPORTANT: Use EEPROM_SIZE or EEPROM will be cleared down to this parameter
   debugHex((char*)(EEPROM.getDataPtr()+EEPROM_PATTERNS_START),100);
   EEPROM.end();
 }
@@ -188,7 +188,7 @@ void PatternManager::clearPatterns() {
     }
   }
 
-  EEPROM.begin(EEPROM_PATTERNS_START+EEPROM_PAGE_SIZE*EEPROM_PATTERNS_PAGES);
+  EEPROM.begin(EEPROM_SIZE); //IMPORTANT: Use EEPROM_SIZE or EEPROM will be cleared down to this parameter
   for (int i=EEPROM_PATTERNS_START; i<EEPROM_PATTERNS_START+EEPROM_PAGE_SIZE*EEPROM_PATTERNS_PAGES; i++) {
     EEPROM.write(i,i == 0 ? 0 : 0xff);
   }
@@ -265,7 +265,7 @@ void PatternManager::deletePattern(byte n) {
     this->flash->eraseSubsector(addr);
   }
 
-  EEPROM.begin(EEPROM_PATTERNS_START+EEPROM_PAGE_SIZE*EEPROM_PATTERNS_PAGES);
+  EEPROM.begin(EEPROM_SIZE); //IMPORTANT: Use EEPROM_SIZE or EEPROM will be cleared down to this parameter
 
   //Serial.print("deleting pattern at address: ");
   //Serial.println(address);
@@ -345,7 +345,7 @@ byte PatternManager::saveLedPatternMetadata(PatternMetadata * pat) {
   }
 
   //Write reference information to EEPROM
-  EEPROM.begin(EEPROM_PATTERNS_START+EEPROM_PAGE_SIZE*EEPROM_PATTERNS_PAGES);
+  EEPROM.begin(EEPROM_SIZE); //IMPORTANT: Use EEPROM_SIZE or EEPROM will be cleared down to this parameter
   PatternReference ref;
   ref.address = pat->address;
   ref.len = pat->len;
@@ -375,7 +375,7 @@ byte PatternManager::saveLedPatternMetadata(PatternMetadata * pat) {
   EEPROM.end();
 
   //Serial.println("finished writing pattern info");
-  //EEPROM.begin(EEPROM_SIZE);
+  //EEPROM.begin(EEPROM_SIZE); //IMPORTANT: Use EEPROM_SIZE or EEPROM will be cleared down to this parameter
   //debugHex((char*)(EEPROM.getDataPtr()+EEPROM_PATTERNS_START),20);
   //EEPROM.end();
 
@@ -417,7 +417,7 @@ void PatternManager::saveTestPattern(PatternMetadata * pat) {
   }
 
   //Serial.println("saving test pattern!");
-  EEPROM.begin(EEPROM_PATTERNS_START+EEPROM_PAGE_SIZE*EEPROM_PATTERNS_PAGES);
+  EEPROM.begin(EEPROM_SIZE); //IMPORTANT: Use EEPROM_SIZE or EEPROM will be cleared down to this parameter
   PatternReference ref;
 
   bool hasTestPattern = false;

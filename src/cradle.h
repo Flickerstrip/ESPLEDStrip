@@ -76,14 +76,14 @@ void cradleSerialLine() {
         Serial.print(" ");
         Serial.print(ident.unit);
         Serial.println();
-        EEPROM.begin(EEPROM_OTP+EEPROM_PAGE_SIZE);
+        EEPROM.begin(EEPROM_SIZE); //IMPORTANT: Use EEPROM_SIZE or EEPROM will be cleared down to this parameter
         for (int i=0; i<sizeof(Identity); i++) {
             EEPROM.write(EEPROM_OTP+i,*((byte*)&ident+i));
         }
         EEPROM.end();
     } else if (strstr(serialBuffer,"checkidentity") != NULL) {
         //Load identity from EEPROM
-        EEPROM.begin(EEPROM_OTP+EEPROM_PAGE_SIZE);
+        EEPROM.begin(EEPROM_SIZE); //IMPORTANT: Use EEPROM_SIZE or EEPROM will be cleared down to this parameter
         for (int i=0; i<sizeof(Identity); i++) {
             ((byte*)&ident)[i] = EEPROM.read(EEPROM_OTP+i);
         }
@@ -129,7 +129,7 @@ bool detectCradle() {
 }
 
 bool isOTPReady() {
-    EEPROM.begin(EEPROM_OTP+EEPROM_PAGE_SIZE);
+    EEPROM.begin(EEPROM_SIZE); //IMPORTANT: Use EEPROM_SIZE or EEPROM will be cleared down to this parameter
     for (int i=0; i<sizeof(Identity); i++) {
         ((byte*)&ident)[i] = EEPROM.read(EEPROM_OTP+i);
     }
@@ -150,7 +150,7 @@ void handleOTPWrite(M25PXFlashMemory* flash) { //Only executes if cradle is not 
         Serial.println("OTP found in EEPROM, writing it to the OTP");
 
         //Program the OTP
-        EEPROM.begin(EEPROM_OTP+EEPROM_PAGE_SIZE);
+        EEPROM.begin(EEPROM_SIZE); //IMPORTANT: Use EEPROM_SIZE or EEPROM will be cleared down to this parameter
         for (int i=0; i<sizeof(Identity); i++) otpbuf[i] = EEPROM.read(EEPROM_OTP+i);
         EEPROM.end();
 
@@ -161,7 +161,7 @@ void handleOTPWrite(M25PXFlashMemory* flash) { //Only executes if cradle is not 
     }
 
     //Clear the OTP from EEPROM
-    EEPROM.begin(EEPROM_OTP+EEPROM_PAGE_SIZE);
+    EEPROM.begin(EEPROM_SIZE); //IMPORTANT: Use EEPROM_SIZE or EEPROM will be cleared down to this parameter
     for (int i=0; i<sizeof(Identity); i++) EEPROM.write(EEPROM_OTP+i,0xff);
     EEPROM.end();
 }

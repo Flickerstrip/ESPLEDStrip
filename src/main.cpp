@@ -149,7 +149,7 @@ void initializeConfiguration() {
 
     Serial.print("[before save config] eeprom begin: ");
     Serial.println(EEPROM_PATTERNS_START+EEPROM_PAGE_SIZE*EEPROM_PATTERNS_PAGES);
-    EEPROM.begin(EEPROM_PATTERNS_START+EEPROM_PAGE_SIZE*EEPROM_PATTERNS_PAGES);
+    EEPROM.begin(EEPROM_SIZE); //IMPORTANT: Use EEPROM_SIZE or EEPROM will be cleared down to this parameter
     debugHex((char*)(EEPROM.getDataPtr()+EEPROM_PATTERNS_START),100);
     EEPROM.end();
 
@@ -157,7 +157,7 @@ void initializeConfiguration() {
 
     Serial.print("[after save config] eeprom begin: ");
     Serial.println(EEPROM_PATTERNS_START+EEPROM_PAGE_SIZE*EEPROM_PATTERNS_PAGES);
-    EEPROM.begin(EEPROM_PATTERNS_START+EEPROM_PAGE_SIZE*EEPROM_PATTERNS_PAGES);
+    EEPROM.begin(EEPROM_SIZE); //IMPORTANT: Use EEPROM_SIZE or EEPROM will be cleared down to this parameter
     debugHex((char*)(EEPROM.getDataPtr()+EEPROM_PATTERNS_START),100);
     EEPROM.end();
   }
@@ -256,7 +256,7 @@ void fillStrip(byte r, byte g, byte b) {
 
 void factoryReset() {
   Serial.println("Clearing configuration and rebooting");
-  EEPROM.begin(EEPROM_SIZE);
+  EEPROM.begin(EEPROM_SIZE); //IMPORTANT: Use EEPROM_SIZE or EEPROM will be cleared down to this parameter
   for (int i=0; i<EEPROM_SIZE; i++) {
     EEPROM.write(i,0xff);
   }
@@ -287,7 +287,7 @@ void loadDefaultConfiguration() {
 }
 
 bool loadConfiguration() {
-  EEPROM.begin(EEPROM_SIZE);
+  EEPROM.begin(EEPROM_SIZE); //IMPORTANT: Use EEPROM_SIZE or EEPROM will be cleared down to this parameter
   for (int i=0; i<sizeof(Configuration); i++) {
     ((byte *)(&config))[i] = EEPROM.read(i);
   }
@@ -299,7 +299,7 @@ bool loadConfiguration() {
 void saveConfiguration() {
   Serial.print("Saving config: ");
   Serial.println(sizeof(Configuration));
-  EEPROM.begin(EEPROM_SIZE);
+  EEPROM.begin(EEPROM_SIZE); //IMPORTANT: Use EEPROM_SIZE or EEPROM will be cleared down to this parameter
   for (int i=0; i<sizeof(Configuration); i++) {
     /*
     Serial.print("writing ");
@@ -402,7 +402,7 @@ void serialLine() {
     Serial.print(loc,HEX);
     Serial.println();
 
-    EEPROM.begin(EEPROM_SIZE);
+    EEPROM.begin(EEPROM_SIZE); //IMPORTANT: Use EEPROM_SIZE or EEPROM will be cleared down to this parameter
     debugHex((char*)(EEPROM.getDataPtr()+loc),30);
     EEPROM.end();
   }
