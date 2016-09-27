@@ -6,12 +6,13 @@
 
 #define EEPROM_PAGE_SIZE 0x100
 
+#define EEPROM_OTP 0x200
 #define EEPROM_TEST_PATTERN 0x300
 #define EEPROM_PATTERNS_START 0x400
-#define EEPROM_OTP 0x400
+#define EEPROM_PATTERNS_PAGES 4
 
 // EEPROM MEMORY MAP:
-// [  0x000 - 0x0ff  ] Configuration (actual size: ~258 bytes)
+// [  0x000 - 0x0ff  ] Configuration (actual size: ~248 bytes)
 // [  0x100 - 0x1ff  ] Configuration
 // [  0x200 - 0x2ff  ] OTP Region (actual size: 64 bytes)
 // [  0x300 - 0x3ff  ] Test pattern metadata (TODO: FIX THIS, make test pattern just pattern at index 0 or something..)

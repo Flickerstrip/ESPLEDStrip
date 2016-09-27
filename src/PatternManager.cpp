@@ -12,7 +12,7 @@ PatternManager::PatternManager(M25PXFlashMemory * mem) {
 }
 
 void PatternManager::loadPatterns() {
-  EEPROM.begin(EEPROM_SIZE);
+  EEPROM.begin(EEPROM_PATTERNS_START+EEPROM_PAGE_SIZE*EEPROM_PATTERNS_PAGES);
 
   //The pattern count is stored in the first byte of the PATTERNS section of eeprom
   this->patternCount = EEPROM.read(EEPROM_PATTERNS_START);
@@ -167,6 +167,13 @@ void PatternManager::resetPatternsToDefault() {
 
   byte patindex = this->saveLedPatternMetadata(&newpat);
   this->saveLedPatternBody(patindex,0,(byte*)this->buf,newpat.len);
+
+  //dump eeprom..
+  Serial.print("eeprom begin: ");
+  Serial.println(EEPROM_PATTERNS_START+EEPROM_PAGE_SIZE*EEPROM_PATTERNS_PAGES);
+  EEPROM.begin(EEPROM_PATTERNS_START+EEPROM_PAGE_SIZE*EEPROM_PATTERNS_PAGES);
+  debugHex((char*)(EEPROM.getDataPtr()+EEPROM_PATTERNS_START),100);
+  EEPROM.end();
 }
 
 void PatternManager::clearPatterns() {
@@ -181,8 +188,8 @@ void PatternManager::clearPatterns() {
     }
   }
 
-  EEPROM.begin(EEPROM_SIZE);
-  for (int i=EEPROM_PATTERNS_START; i<EEPROM_SIZE; i++) {
+  EEPROM.begin(EEPROM_PATTERNS_START+EEPROM_PAGE_SIZE*EEPROM_PATTERNS_PAGES);
+  for (int i=EEPROM_PATTERNS_START; i<EEPROM_PATTERNS_START+EEPROM_PAGE_SIZE*EEPROM_PATTERNS_PAGES; i++) {
     EEPROM.write(i,i == 0 ? 0 : 0xff);
   }
   EEPROM.end();
@@ -258,7 +265,7 @@ void PatternManager::deletePattern(byte n) {
     this->flash->eraseSubsector(addr);
   }
 
-  EEPROM.begin(EEPROM_SIZE);
+  EEPROM.begin(EEPROM_PATTERNS_START+EEPROM_PAGE_SIZE*EEPROM_PATTERNS_PAGES);
 
   //Serial.print("deleting pattern at address: ");
   //Serial.println(address);
@@ -320,9 +327,9 @@ byte PatternManager::saveLedPatternMetadata(PatternMetadata * pat) {
   pat->len += 0x100; //we're adding a page for metadata storage
 
   byte insert = findInsertLocation(pat->len);
-  //Serial.print("inserting pattern at: ");
-  //Serial.print(insert);
-  //Serial.println();
+  Serial.print("inserting pattern at: ");
+  Serial.print(insert);
+  Serial.println();
   if (insert == 0) {
       pat->address = 0;
   } else {
@@ -338,31 +345,31 @@ byte PatternManager::saveLedPatternMetadata(PatternMetadata * pat) {
   }
 
   //Write reference information to EEPROM
-  EEPROM.begin(EEPROM_SIZE);
+  EEPROM.begin(EEPROM_PATTERNS_START+EEPROM_PAGE_SIZE*EEPROM_PATTERNS_PAGES);
   PatternReference ref;
   ref.address = pat->address;
   ref.len = pat->len;
-  //Serial.print("Address: ");
-  //Serial.print(ref.address);
-  //Serial.println();
-  //Serial.print("len: ");
-  //Serial.print(ref.len);
-  //Serial.println();
+  Serial.print("Address: ");
+  Serial.print(ref.address);
+  Serial.println();
+  Serial.print("len: ");
+  Serial.print(ref.len);
+  Serial.println();
   for (int i=0; i<sizeof(PatternReference); i++) {
-    //Serial.print("Writing byte: ");
-    //Serial.print(((byte *)(&ref))[i],HEX);
-    //Serial.print(" to ");
-    //Serial.print(EEPROM_PATTERNS_START+1+sizeof(PatternReference)*this->patternCount+i,DEC);
-    //Serial.println();
+    Serial.print("Writing byte: ");
+    Serial.print(((byte *)(&ref))[i],HEX);
+    Serial.print(" to ");
+    Serial.print(EEPROM_PATTERNS_START+1+sizeof(PatternReference)*this->patternCount+i,DEC);
+    Serial.println();
     EEPROM.write(EEPROM_PATTERNS_START+1+sizeof(PatternReference)*this->patternCount+i,((byte *)(&ref))[i]);
   }
 
   this->patternCount++;
-  //Serial.print("Writing byte: ");
-  //Serial.print(this->patternCount);
-  //Serial.print(" to ");
-  //Serial.print(EEPROM_PATTERNS_START);
-  //Serial.println();
+  Serial.print("Writing byte: ");
+  Serial.print(this->patternCount);
+  Serial.print(" to ");
+  Serial.print(EEPROM_PATTERNS_START);
+  Serial.println();
   EEPROM.write(EEPROM_PATTERNS_START,this->patternCount);
 
   EEPROM.end();
@@ -410,7 +417,7 @@ void PatternManager::saveTestPattern(PatternMetadata * pat) {
   }
 
   //Serial.println("saving test pattern!");
-  EEPROM.begin(EEPROM_SIZE);
+  EEPROM.begin(EEPROM_PATTERNS_START+EEPROM_PAGE_SIZE*EEPROM_PATTERNS_PAGES);
   PatternReference ref;
 
   bool hasTestPattern = false;

@@ -146,7 +146,20 @@ void initializeConfiguration() {
     patternManager.resetPatternsToDefault();
 
     loadDefaultConfiguration();
+
+    Serial.print("[before save config] eeprom begin: ");
+    Serial.println(EEPROM_PATTERNS_START+EEPROM_PAGE_SIZE*EEPROM_PATTERNS_PAGES);
+    EEPROM.begin(EEPROM_PATTERNS_START+EEPROM_PAGE_SIZE*EEPROM_PATTERNS_PAGES);
+    debugHex((char*)(EEPROM.getDataPtr()+EEPROM_PATTERNS_START),100);
+    EEPROM.end();
+
     saveConfiguration();
+
+    Serial.print("[after save config] eeprom begin: ");
+    Serial.println(EEPROM_PATTERNS_START+EEPROM_PAGE_SIZE*EEPROM_PATTERNS_PAGES);
+    EEPROM.begin(EEPROM_PATTERNS_START+EEPROM_PAGE_SIZE*EEPROM_PATTERNS_PAGES);
+    debugHex((char*)(EEPROM.getDataPtr()+EEPROM_PATTERNS_START),100);
+    EEPROM.end();
   }
 }
 
@@ -284,6 +297,8 @@ bool loadConfiguration() {
 }
 
 void saveConfiguration() {
+  Serial.print("Saving config: ");
+  Serial.println(sizeof(Configuration));
   EEPROM.begin(EEPROM_SIZE);
   for (int i=0; i<sizeof(Configuration); i++) {
     /*

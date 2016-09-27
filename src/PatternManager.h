@@ -16,6 +16,8 @@
 #include <ArduinoJson.h>
 #include "EEPROMLayout.h"
 
+void debugHex(const char *buf, int len);
+
 class PatternManager {
 public:
   PatternManager(M25PXFlashMemory * mem);
