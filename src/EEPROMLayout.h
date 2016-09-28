@@ -1,4 +1,4 @@
-// vim:ts=2 sw=2:
+// vim:ts=4 sw=4:
 #ifndef EEPROMLayout_h
 #define EEPROMLayout_h
 

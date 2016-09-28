@@ -1,4 +1,4 @@
-// vim:ts=2 sw=2:
+// vim:ts=4 sw=4:
 #ifndef PatternManager_h
 #define PatternManager_h
 
@@ -30,19 +30,15 @@ public:
   void selectPattern(byte n);
   void setTransitionDuration(int duration);
   uint32_t findInsertLocation(uint32_t len);
-  byte saveLedPatternMetadata(PatternMetadata * pat);
-  void saveLedPatternBody(int pattern, uint32_t patternStartPage, byte * payload, uint32_t len);
-
-  void saveTestPattern(PatternMetadata * pat);
-  void saveTestPatternBody(uint32_t patternStartPage, byte * payload, uint32_t len);
-  void showTestPattern(bool show);
+  byte saveLedPatternMetadata(PatternMetadata * pat, bool previewPattern);
+  void saveLedPatternBody(byte pattern, uint32_t patternStartPage, byte * payload, uint32_t len);
 
   int getTotalBlocks();
   int getUsedBlocks();
   int getAvailableBlocks();
 
   int getPatternCount();
-  int getSelectedPattern();
+  byte getSelectedPattern();
   int getCurrentFrame();
   int getPatternIndexByName(const char * name);
   bool isTestPatternActive();
@@ -61,12 +57,11 @@ private:
   M25PXFlashMemory * flash;
 
   char buf[1000];
+  PatternReference patternsByAddress[MAX_PATTERNS];
   PatternMetadata patterns[MAX_PATTERNS];
-  PatternMetadata testPattern;
-  bool testPatternActive;
 
-  int prev_selectedPattern;
-  int selectedPattern;
+  byte prev_selectedPattern;
+  byte selectedPattern;
   RunningPattern prev;
   RunningPattern current;
 
@@ -79,6 +74,9 @@ private:
   long patternTransitionTime;
   int transitionDuration;
   long lastFrame;
+
+  int insertPatternReference(PatternReference * ref);
+  void saveReferenceTable();
 };
 
 #endif

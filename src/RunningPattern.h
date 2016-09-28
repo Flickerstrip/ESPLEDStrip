@@ -1,4 +1,4 @@
-// vim:ts=2 sw=2:
+// vim:ts=4 sw=4:
 #ifndef RunningPattern_h
 #define RunningPattern_h
 
@@ -19,6 +19,7 @@ public:
 
   void syncToFrame(int frame,int pingDelay = 0);
   bool needsUpdate();
+  bool hasPattern();
   void loadFrame(LEDStrip * strip, M25PXFlashMemory * flash, float multiplier, int frame);
   void loadNextFrame(LEDStrip * strip, M25PXFlashMemory * flash, float multiplier);
 

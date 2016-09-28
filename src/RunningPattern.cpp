@@ -1,4 +1,4 @@
-// vim:ts=2 sw=2:
+// vim:ts=4 sw=4:
 #include "PatternManager.h"
 
 RunningPattern::RunningPattern() {
@@ -26,6 +26,10 @@ void RunningPattern::syncToFrame(int frame, int pingDelay) {
 
   int nextFrameAt = millis() + remaining;
   this->lastFrameTime = nextFrameAt - msPerFrame;
+}
+
+bool RunningPattern::hasPattern() {
+    return this->pattern != NULL;
 }
 
 bool RunningPattern::needsUpdate() {
