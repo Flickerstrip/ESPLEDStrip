@@ -2,7 +2,7 @@
 #ifndef PatternMetadata_h
 #define PatternMetadata_h
 
-#define PATTERN_NAME_LENGTH 50;
+#define PATTERN_NAME_LENGTH 50
 
 struct PatternMetadata {
   char name[PATTERN_NAME_LENGTH];

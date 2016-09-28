@@ -183,7 +183,7 @@ void PatternManager::selectPattern(byte n) {
     this->freezeFrameIndex = -1;
 
     if (this->patterns[n].address == 0xffffffff) return;
-    if (n >= this->patternCount) return;
+    if (n >= this->patternCount) n = this->patternCount - 1;
 
     //Store the transition information
     this->prev_selectedPattern = this->selectedPattern;
