@@ -985,11 +985,16 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
         readBytes(client,(char*)&body,contentLength,1000);
         body[contentLength] = 0;
 
-        StaticJsonBuffer<2000> jsonBuffer; //TODO increase this? return an error for oversized?
+        if (contentLength > 2000) {
+            sendErr(&client,"Request too large for JSON, try binary endpoing"); //TODO implement binary endpoint
+            return true;
+        }
+
+        StaticJsonBuffer<2000> jsonBuffer;
         JsonObject& root = jsonBuffer.parseObject(body);
 
         PatternMetadata pat;
-        memcpy(pat.name,root["name"].asString(),16); //TODO fix me
+        memcpy(pat.name,root["name"].asString(),PATTERN_NAME_LENGTH);
         pat.frames = root["frames"].as<uint16_t>();
         pat.len = root["pixels"].as<uint16_t>() * pat.frames * 3;
         pat.fps = root["fps"].as<uint16_t>();
@@ -1010,66 +1015,10 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
         Serial.println(pat.name);
 
         sendOk(&client);
-
-        /*
-
-        //BE AWARE: word alignment seems to matter.. we're copying this to a different location to avoid pointer alignment issues
-        PatternMetadata pat;
-        int readSize = readBytes(client,(char*)&pat,sizeof(PatternMetadata),1000);
-        if (readSize != sizeof(PatternMetadata)) {
-            Serial.println("Error reading pattern metadata!");
-            return false;
-        }
-
-        uint32_t remaining = contentLength - readSize;
-
-        //TODO clean up the test vs save functionality (dedupe)
-        if (isTestPattern) {
-            patternManager.saveTestPattern(&pat);
-            int page = 0;
-            byte pagebuffer[0x100];
-            while(remaining > 0) {
-                int pageReadSize = 0x100;
-                if (remaining < pageReadSize) pageReadSize = remaining;
-                readSize = readBytes(client,(char*)&pagebuffer,0x100,1000);
-                //Serial.println("read page: ");
-                //debugHex((char*)&pagebuffer,0x100);
-                if (readSize != pageReadSize) {
-                    Serial.println("Short read!");
-                    return false;
-                }
-                remaining -= readSize;
-                patternManager.saveTestPatternBody(page++,(byte*)&pagebuffer,0x100);
-            }
-            patternManager.showTestPattern(true);
-        } else {
-            byte pattern = patternManager.saveLedPatternMetadata(&pat);
-            int page = 0;
-            byte pagebuffer[0x100];
-            while(remaining > 0) {
-                int pageReadSize = 0x100;
-                if (remaining < pageReadSize) pageReadSize = remaining;
-                readSize = readBytes(client,(char*)&pagebuffer,0x100,1000);
-                //Serial.println("read page: ");
-                //debugHex((char*)&pagebuffer,0x100);
-                if (readSize != pageReadSize) {
-                    Serial.println("Short read!");
-                    return false;
-                }
-                remaining -= readSize;
-                patternManager.saveLedPatternBody(pattern,page++,(byte*)&pagebuffer,0x100);
-            }
-            selectPattern(pattern);
-        }
-
-        client.flush();
-        sendOk(&client);
-        */
     } else {
         char content[] = "Not Found";
         sendHttp(&client,404,"Not Found","text/plain",content);
     }
-    Serial.flush();
     return true;
 }
 
@@ -1177,7 +1126,6 @@ void loop() {
         startSSDP();
 
         server.begin();
-        //UDP seems to be unstable.. TODO investigate why
         udp.begin(2836);
 
         long lastRequest = millis();

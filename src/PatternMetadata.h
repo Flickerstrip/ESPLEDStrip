@@ -2,8 +2,10 @@
 #ifndef PatternMetadata_h
 #define PatternMetadata_h
 
+#define PATTERN_NAME_LENGTH 50;
+
 struct PatternMetadata {
-  char name[16];
+  char name[PATTERN_NAME_LENGTH];
   uint32_t address;
   uint32_t len;
   uint16_t frames;
