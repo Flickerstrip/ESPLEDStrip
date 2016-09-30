@@ -63,6 +63,7 @@ void PatternManager::saveReferenceTable() {
     uint8_t * ptr = EEPROM.getDataPtr();
     for (int i=0; i<this->patternCount; i++) {
         PatternReference ref;
+        ref.id = patterns[i].id;
         ref.address = patterns[i].address;
         ref.len = patterns[i].len;
         memcpy(ptr+EEPROM_PATTERNS_START+1+i*sizeof(PatternReference),&ref,sizeof(PatternReference));
@@ -75,6 +76,29 @@ void PatternManager::saveReferenceTable() {
     EEPROM.end();
 }
 
+uint8_t PatternManager::createId() {
+    uint8_t used[MAX_PATTERNS];
+    for (uint8_t i=0; i<this->patternCount; i++) {
+        used[i] = this->patterns[i].id;
+    }
+
+    //Selection sort the array of IDs
+    for (uint8_t i=0; i<this->patternCount; i++) {
+        uint8_t minIndex = 0;
+        for (uint8_t l=i; l<this->patternCount; l++) {
+            if (used[l] < used[minIndex]) minIndex = l;
+        }
+        uint8_t tmp = used[i];
+        used[i] = used[minIndex];
+        used[minIndex] = tmp;
+        if (i != 0 && used[i-1]+1 < used[i]) { //short circuit the sort if we find that theres a > 1 difference between this item and the previous one
+            return used[i-1]+1;
+        }
+    }
+
+    return this->patternCount - 1;
+}
+
 void PatternManager::echoPatternTable() {
     for (int i=0; i<this->patternCount; i++) {
         Serial.print("[");
@@ -83,7 +107,9 @@ void PatternManager::echoPatternTable() {
             Serial.println("] EMPTY");
             continue;
         }
-        Serial.print("] 0x");
+        Serial.print("] (");
+        Serial.print(this->patterns[i].id);
+        Serial.print(") 0x");
         Serial.print(this->patterns[i].address,HEX);
         Serial.print(" len:");
         Serial.print(this->patterns[i].len,DEC);
@@ -97,7 +123,9 @@ void PatternManager::echoPatternTable() {
         if (this->patternsByAddress[i].address == 0xffffffff) continue;
         Serial.print("[");
         Serial.print(i);
-        Serial.print("] 0x");
+        Serial.print("] (");
+        Serial.print(this->patternsByAddress[i].id);
+        Serial.print(") 0x");
         Serial.print(this->patternsByAddress[i].address,HEX);
         Serial.print(" len:");
         Serial.print(this->patternsByAddress[i].len,DEC);
@@ -147,8 +175,8 @@ void PatternManager::resetPatternsToDefault() {
         led++;
     }
 
-    byte patindex = this->saveLedPatternMetadata(&newpat,false);
-    this->saveLedPatternBody(patindex,0,(byte*)this->buf,newpat.len);
+    uint8_t id = this->saveLedPatternMetadata(&newpat,false);
+    this->saveLedPatternBody(id,0,(byte*)this->buf,newpat.len);
 }
 
 void PatternManager::clearPatterns() {
@@ -195,6 +223,14 @@ void PatternManager::selectPattern(byte n) {
     PatternMetadata * pat = &this->patterns[n];
 
     current = RunningPattern(pat,this->buf);
+}
+
+void PatternManager::selectPatternById(uint8_t patternId) {
+    this->selectPattern(this->findPatternById(patternId) - 1); //deals with the offset
+}
+
+bool PatternManager::isValidPatternId(uint8_t patternId) {
+    return this->findPatternById(patternId) != 0xff;
 }
 
 void PatternManager::setTransitionDuration(int duration) {
@@ -262,7 +298,7 @@ uint32_t PatternManager::findInsertLocation(uint32_t len) {
     return 0;
 }
 
-byte PatternManager::saveLedPatternMetadata(PatternMetadata * pat, bool previewPattern) {
+uint8_t PatternManager::saveLedPatternMetadata(PatternMetadata * pat, bool previewPattern) {
     pat->len += 0x100; //we're adding a page for metadata storage
 
     if (previewPattern) this->deletePattern(-1);
@@ -275,14 +311,20 @@ byte PatternManager::saveLedPatternMetadata(PatternMetadata * pat, bool previewP
         pat->address = ((this->patternsByAddress[insert-1].address + this->patternsByAddress[insert-1].len) & 0xfffff000) + 0x1000;
     }
 
+    pat->id = this->createId();
+
     PatternReference ref;
+    ref.id = pat->id;
     ref.address = pat->address;
     ref.len = pat->len;
-    //Serial.print("inserting ref: 0x");
-    //Serial.print(pat->address,HEX);
-    //Serial.print(", ");
-    //Serial.print(pat->len);
-    //Serial.println();
+
+    Serial.print("inserting ref: ");
+    Serial.print(pat->id);
+    Serial.print(", 0x");
+    Serial.print(pat->address,HEX);
+    Serial.print(", ");
+    Serial.print(pat->len);
+    Serial.println();
 
     byte insertloc = this->insertPatternReference(&ref);
     //Serial.print("inserted: ");
@@ -297,17 +339,32 @@ byte PatternManager::saveLedPatternMetadata(PatternMetadata * pat, bool previewP
     if (!previewPattern) this->patternCount++;
     this->saveReferenceTable();
 
-    //Serial.println("saved ref table..");
-    //this->echoPatternTable();
+    Serial.println("saved ref table..");
+    this->echoPatternTable();
 
-    return patternIndex - 1;
+    return pat->id;
 }
 
-void PatternManager::saveLedPatternBody(byte pattern, uint32_t patternStartPage, byte * payload, uint32_t len) {
-    pattern = pattern + 1;
-    PatternMetadata * pat = &this->patterns[pattern];
+uint8_t PatternManager::findPatternById(uint8_t patternId) {
+    for (int i=0; i<this->patternCount; i++) {
+        if (this->patterns[i].id == patternId) return i;
+    }
+    return 0xff;
+}
+
+void PatternManager::saveLedPatternBody(uint8_t patternId, uint32_t patternStartPage, byte * payload, uint32_t len) {
+    uint8_t patternIndex = this->findPatternById(patternId);
+    if (patternIndex == 0xff) return;
+
+    Serial.print("writing pattern body index: ");
+    Serial.println(patternIndex);
+
+    PatternMetadata * pat = &this->patterns[patternIndex];
 
     uint32_t writeLocation = pat->address + 0x100 + patternStartPage*0x100;
+
+    Serial.print("loc: 0x");
+    Serial.println(writeLocation,HEX);
 
     this->flash->programBytes(writeLocation,payload,len);
 }
@@ -404,7 +461,7 @@ bool PatternManager::loadNextFrame(LEDStrip * strip) {
         current.loadFrame(strip,this->flash, 1, this->freezeFrameIndex);
     } else if (isTransitioning) {
         strip->clear();
-        float transitionFactor =    (millis() - this->patternTransitionTime) / (float)this->transitionDuration;
+        float transitionFactor = (millis() - this->patternTransitionTime) / (float)this->transitionDuration;
         current.loadNextFrame(strip,this->flash, transitionFactor);
         prev.loadNextFrame(strip,this->flash,1.0 - transitionFactor);
     } else {

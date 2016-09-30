@@ -978,43 +978,118 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
         if (!success) return false;
         selectPattern(val);
         sendOk(&client);
-    } else if (strcmp(urlval,"/pattern/test") == 0 || strcmp(urlval,"/pattern/save") == 0) {
-        bool previewPattern = strcmp(urlval,"/pattern/test") == 0;
+    } else if (strcmp(urlval,"/pattern/create") == 0) {
+        uint8_t id = 0xff;
+        bool success = getInteger(buf,"id",&val);
+        if (success) {
+            //When ID is present, we assume that we're adding data to an existing pattern (or replacing that pattern)
+            id = val;
+            Serial.print("found id: ");
+            Serial.println(id);
+            if (!patternManager.isValidPatternId(id)) return false;
+        } else {
+            //If the ID isn't present, check for the pattern definition GET parameters. If they're all there, we can create the pattern this way.
+            success = getInteger(buf,"frames",&val);
+            uint16_t frames = val;
+            success &= getInteger(buf,"pixels",&val);
+            uint16_t pixels = val;
+            success &= getInteger(buf,"fps",&val);
+            uint8_t fps = val;
 
-        char body[contentLength+1];
-        readBytes(client,(char*)&body,contentLength,1000);
-        body[contentLength] = 0;
+            char * nameptr;
+            bool previewPattern = findGet(buf,&nameptr,"preview") != -1; //check for presence of "preview"
+            int len = findGet(buf,&nameptr,"name");
+            if (len == -1) success = false;
 
-        if (contentLength > 2000) {
-            sendErr(&client,"Request too large for JSON, try binary endpoing"); //TODO implement binary endpoint
-            return true;
+            if (success) {
+                Serial.println("creating patttern metadata");
+                Serial.print("frames: ");
+                Serial.println(frames);
+                Serial.print("pixels: ");
+                Serial.println(pixels);
+                Serial.print("fps: ");
+                Serial.println(fps);
+
+                //We have all the information we need in the get string, create the metadata!
+                PatternMetadata pat;
+                memcpy(pat.name,nameptr,len);
+                pat.frames = frames;
+                pat.len = pixels * frames * 3;
+                pat.fps = fps;
+
+                id = patternManager.saveLedPatternMetadata(&pat,previewPattern);
+            }
         }
 
-        StaticJsonBuffer<2000> jsonBuffer;
-        JsonObject& root = jsonBuffer.parseObject(body);
+        if (id != 0xff) {
+            //**************** SAVE PATTERN FROM BINARY FORMAT ************//
+            Serial.print("Saving pattern: ");
+            Serial.println(id);
 
-        PatternMetadata pat;
-        memcpy(pat.name,root["name"].asString(),PATTERN_NAME_LENGTH);
-        pat.frames = root["frames"].as<uint16_t>();
-        pat.len = root["pixels"].as<uint16_t>() * pat.frames * 3;
-        pat.fps = root["fps"].as<uint16_t>();
+            uint32_t remaining = contentLength;
 
-        const char * data = root["pixelData"].asString();
+            int page = 0;
+            int readSize;
+            byte pagebuffer[0x100];
+            while(remaining > 0) {
+                int pageReadSize = 0x100;
+                if (remaining < pageReadSize) pageReadSize = remaining;
+                readSize = readBytes(client,(char*)&pagebuffer,0x100,1000);
+                /*
+                Serial.println("read page: ");
+                debugHex((char*)&pagebuffer,0x100);
+                */
+                if (readSize != pageReadSize) {
+                    Serial.println("Short read!");
+                    return false;
+                }
+                remaining -= readSize;
+                patternManager.saveLedPatternBody(id,page++,(byte*)&pagebuffer,0x100);
+            }
+            patternManager.selectPatternById(id);
+        } else {
+            //**************** Entirely JSON body ************//
+            char body[contentLength+1];
+            readBytes(client,(char*)&body,contentLength,1000);
+            body[contentLength] = 0;
 
-        int dataLength = strlen(data);
-        int decodedLength = Base64.decodedLength((char*)data, dataLength);
-        char decoded[decodedLength];
-        Base64.decode(decoded, (char*)data, dataLength);
+            if (contentLength > 1000) {
+                sendErr(&client,"Request too large for JSON, try binary endpoing"); //TODO implement binary endpoint
+                return true;
+            }
 
-        byte pattern = patternManager.saveLedPatternMetadata(&pat,previewPattern);
-        for (int page=0; page<=decodedLength/0x100; page++) {
-            patternManager.saveLedPatternBody(pattern,page,(byte*)&decoded+page*0x100,0x100);
+            StaticJsonBuffer<1000> jsonBuffer;
+            JsonObject& root = jsonBuffer.parseObject(body);
+
+            PatternMetadata pat;
+            memcpy(pat.name,root["name"].asString(),PATTERN_NAME_LENGTH);
+            pat.frames = root["frames"].as<uint16_t>();
+            pat.len = root["pixels"].as<uint16_t>() * pat.frames * 3;
+            pat.fps = root["fps"].as<uint16_t>();
+            bool previewPattern = root.containsKey("preview") && root["preview"].as<bool>();
+
+            id = patternManager.saveLedPatternMetadata(&pat,previewPattern);
+
+            const char * data = root["pixelData"].asString();
+            if (root.containsKey("pixelData")) {
+                int dataLength = strlen(data);
+                int decodedLength = Base64.decodedLength((char*)data, dataLength);
+                char decoded[decodedLength];
+                Base64.decode(decoded, (char*)data, dataLength);
+
+                for (int page=0; page<=decodedLength/0x100; page++) {
+                    patternManager.saveLedPatternBody(id,page,(byte*)&decoded+page*0x100,0x100);
+                }
+                patternManager.selectPatternById(id);
+            }
+            Serial.print("Saved pattern: ");
+            Serial.println(pat.name);
         }
-        selectPattern(pattern);
-        Serial.print("Saved pattern: ");
-        Serial.println(pat.name);
 
-        sendOk(&client);
+        StaticJsonBuffer<200> outBuffer;
+        JsonObject& outRoot = outBuffer.createObject();
+        outRoot["id"] = id;
+        sendHttp(&client,200,"OK",outRoot);
     } else {
         char content[] = "Not Found";
         sendHttp(&client,404,"Not Found","text/plain",content);

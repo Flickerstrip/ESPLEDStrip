@@ -28,10 +28,12 @@ public:
   void clearPatterns();
   void deletePattern(byte n);
   void selectPattern(byte n);
+  void selectPatternById(uint8_t patternId);
+  bool isValidPatternId(uint8_t patternId);
   void setTransitionDuration(int duration);
   uint32_t findInsertLocation(uint32_t len);
-  byte saveLedPatternMetadata(PatternMetadata * pat, bool previewPattern);
-  void saveLedPatternBody(byte pattern, uint32_t patternStartPage, byte * payload, uint32_t len);
+  uint8_t saveLedPatternMetadata(PatternMetadata * pat, bool previewPattern);
+  void saveLedPatternBody(uint8_t patternId, uint32_t patternStartPage, byte * payload, uint32_t len);
 
   int getTotalBlocks();
   int getUsedBlocks();
@@ -75,8 +77,10 @@ private:
   int transitionDuration;
   long lastFrame;
 
+  uint8_t findPatternById(uint8_t patternId);
   int insertPatternReference(PatternReference * ref);
   void saveReferenceTable();
+  uint8_t createId();
 };
 
 #endif
