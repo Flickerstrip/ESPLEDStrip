@@ -20,67 +20,69 @@ void debugHex(const char *buf, int len);
 
 class PatternManager {
 public:
-  PatternManager(M25PXFlashMemory * mem);
+    PatternManager(M25PXFlashMemory * mem);
 
-  void loadPatterns();
-  void echoPatternTable();
-  void resetPatternsToDefault();
-  void clearPatterns();
-  void deletePattern(byte n);
-  void selectPattern(byte n);
-  void selectPatternById(uint8_t patternId);
-  bool isValidPatternId(uint8_t patternId);
-  void setTransitionDuration(int duration);
-  uint32_t findInsertLocation(uint32_t len);
-  uint8_t saveLedPatternMetadata(PatternMetadata * pat, bool previewPattern);
-  void saveLedPatternBody(uint8_t patternId, uint32_t patternStartPage, byte * payload, uint32_t len);
+    void loadPatterns();
+    void echoPatternTable();
+    void resetPatternsToDefault();
+    void clearPatterns();
+    void deletePattern(byte n);
+    void deletePatternById(uint8_t patternId);
+    void selectPattern(byte n);
+    void selectPatternById(uint8_t patternId);
+    bool isValidPatternId(uint8_t patternId);
+    void setTransitionDuration(int duration);
+    bool hasTestPattern();
+    uint32_t findInsertLocation(uint32_t len);
+    uint8_t saveLedPatternMetadata(PatternMetadata * pat, bool previewPattern);
+    void saveLedPatternBody(uint8_t patternId, uint32_t patternStartPage, byte * payload, uint32_t len);
 
-  int getTotalBlocks();
-  int getUsedBlocks();
-  int getAvailableBlocks();
+    int getTotalBlocks();
+    int getUsedBlocks();
+    int getAvailableBlocks();
 
-  int getPatternCount();
-  byte getSelectedPattern();
-  int getCurrentFrame();
-  int getPatternIndexByName(const char * name);
-  bool isTestPatternActive();
-  PatternMetadata * getActivePattern();
-  PatternMetadata * getPrevPattern();
+    int getPatternCount();
+    byte getSelectedPattern();
+    int getCurrentFrame();
+    int getPatternIndexByName(const char * name);
+    bool isTestPatternActive();
+    PatternMetadata * getActivePattern();
+    PatternMetadata * getPrevPattern();
 
-  void syncToFrame(int frame,int pingDelay = 0);
-  void freezeFrame(int frame);
-  bool loadNextFrame(LEDStrip * strip);
-  int serializePatterns(char * buf, int len);
-  void jsonPatterns(JsonArray& json);
+    void syncToFrame(int frame,int pingDelay = 0);
+    void freezeFrame(int frame);
+    bool loadNextFrame(LEDStrip * strip);
+    int serializePatterns(char * buf, int len);
+    void jsonPatterns(JsonArray& json);
 
 private:
-  const static int NUM_SUBSECTORS = 250; //TODO update me for 16M flash
+    const static int NUM_SUBSECTORS = 250; //TODO update me for 16M flash
 
-  M25PXFlashMemory * flash;
+    M25PXFlashMemory * flash;
 
-  char buf[1000];
-  PatternReference patternsByAddress[MAX_PATTERNS];
-  PatternMetadata patterns[MAX_PATTERNS];
+    char buf[1000];
+    PatternReference patternsByAddress[MAX_PATTERNS];
+    PatternMetadata patterns[MAX_PATTERNS];
 
-  byte prev_selectedPattern;
-  byte selectedPattern;
-  RunningPattern prev;
-  RunningPattern current;
+    byte prev_selectedPattern;
+    byte selectedPattern;
+    RunningPattern prev;
+    RunningPattern current;
 
-  int patternCount;
-  int lastSavedPattern;
+    int patternCount;
+    int lastSavedPattern;
 
-  int freezeFrameIndex;
+    int freezeFrameIndex;
 
-  // Transition variables
-  long patternTransitionTime;
-  int transitionDuration;
-  long lastFrame;
+    // Transition variables
+    long patternTransitionTime;
+    int transitionDuration;
+    long lastFrame;
 
-  uint8_t findPatternById(uint8_t patternId);
-  int insertPatternReference(PatternReference * ref);
-  void saveReferenceTable();
-  uint8_t createId();
+    uint8_t findPatternById(uint8_t patternId);
+    int insertPatternReference(PatternReference * ref);
+    void saveReferenceTable();
+    uint8_t createId();
 };
 
 #endif

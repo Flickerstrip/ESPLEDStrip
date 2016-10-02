@@ -42,8 +42,8 @@ void PatternManager::loadPatterns() {
 
 int PatternManager::insertPatternReference(PatternReference * ref) { //Does not increment pattern count
     int insertLocation;
-    for (insertLocation=0; insertLocation<this->patternCount; insertLocation++) {
-        if (ref->address == 0xffffffff) continue;
+    uint8_t addressedPatterns = this->hasTestPattern() ? this->patternCount-1 : this->patternCount;
+    for (insertLocation=0; insertLocation<addressedPatterns; insertLocation++) {
         if (ref->address < this->patternsByAddress[insertLocation].address) {
             for (int i=this->patternCount; i>insertLocation; i--) {
                 memcpy(&this->patternsByAddress[i],&this->patternsByAddress[i-1],sizeof(PatternReference));
@@ -77,17 +77,21 @@ void PatternManager::saveReferenceTable() {
 }
 
 uint8_t PatternManager::createId() {
-    uint8_t used[MAX_PATTERNS];
+    uint8_t used[this->patternCount];
+    uint8_t pats = 0;
     for (uint8_t i=0; i<this->patternCount; i++) {
-        used[i] = this->patterns[i].id;
+        if (this->patterns[i].address == 0xffffffff) continue;
+        used[pats] = this->patterns[i].id;
+        pats ++;
     }
 
     //Selection sort the array of IDs
-    for (uint8_t i=0; i<this->patternCount; i++) {
-        uint8_t minIndex = 0;
-        for (uint8_t l=i; l<this->patternCount; l++) {
+    for (uint8_t i=0; i<pats; i++) {
+        uint8_t minIndex = i;
+        for (uint8_t l=i; l<pats; l++) {
             if (used[l] < used[minIndex]) minIndex = l;
         }
+
         uint8_t tmp = used[i];
         used[i] = used[minIndex];
         used[minIndex] = tmp;
@@ -96,7 +100,11 @@ uint8_t PatternManager::createId() {
         }
     }
 
-    return this->patternCount - 1;
+    if (pats == 0 || used[0] != 1) {
+        return 1;
+    }
+
+    return pats + 1;
 }
 
 void PatternManager::echoPatternTable() {
@@ -119,8 +127,8 @@ void PatternManager::echoPatternTable() {
     }
 
     Serial.println("Patterns by address: ");
-    for (int i=0; i<this->patternCount; i++) {
-        if (this->patternsByAddress[i].address == 0xffffffff) continue;
+    uint8_t addressedPatterns = this->hasTestPattern() ? this->patternCount-1 : this->patternCount;
+    for (int i=0; i<addressedPatterns; i++) {
         Serial.print("[");
         Serial.print(i);
         Serial.print("] (");
@@ -186,9 +194,9 @@ void PatternManager::clearPatterns() {
         uint32_t first = this->patterns[i].address & 0xfffff000;
         uint32_t count = (this->patterns[i].len / 0x1000) + 1;
         for (int l=0; l<count; l++) {
-            //Serial.print("Erasing subsector: ");
             uint32_t addr = first+(0x1000 * l);
-            //Serial.println(addr,HEX);
+            Serial.print("Erasing subsector: 0x");
+            Serial.println(addr,HEX);
             this->flash->eraseSubsector(addr);
         }
     }
@@ -202,11 +210,11 @@ void PatternManager::clearPatterns() {
     lastSavedPattern = -1;
 }
 
-void PatternManager::selectPattern(byte n) {
-    Serial.print("Pattern Selected: ");
-    Serial.println(n);
-
+void PatternManager::selectPatternByIndex(byte n) {
     n = n + 1; //0xff is used for test pattern
+
+    Serial.print("Selecting Pattern: ");
+    Serial.println(n);
 
     this->freezeFrameIndex = -1;
 
@@ -226,6 +234,8 @@ void PatternManager::selectPattern(byte n) {
 }
 
 void PatternManager::selectPatternById(uint8_t patternId) {
+    Serial.print("selecting by id: ");
+    Serial.println(patternId);
     this->selectPattern(this->findPatternById(patternId) - 1); //deals with the offset
 }
 
@@ -237,8 +247,10 @@ void PatternManager::setTransitionDuration(int duration) {
     this->transitionDuration = duration;
 }
 
-void PatternManager::deletePattern(byte n) {
+void PatternManager::deletePatternByIndex(byte n) {
     n = n + 1;
+    Serial.print("Deleting Pattern: ");
+    Serial.println(n);
     uint32_t address = this->patterns[n].address;
     uint32_t first = this->patterns[n].address & 0xfffff000;
     uint32_t count = (this->patterns[n].len / 0x1000) + 1;
@@ -246,12 +258,13 @@ void PatternManager::deletePattern(byte n) {
     if (address != 0xffffffff) {
         for (int l=0; l<count; l++) {
             uint32_t addr = first+(0x1000 * l);
-            //Serial.print("Erasing subsector: ");
-            //Serial.println(addr,HEX);
+            Serial.print("Erasing subsector: 0x");
+            Serial.print(addr,HEX);
             this->flash->eraseSubsector(addr);
         }
 
-        for (int i=0; i<this->patternCount; i++) {
+        uint8_t addressedPatterns = this->hasTestPattern() ? this->patternCount-1 : this->patternCount;
+        for (int i=0; i<addressedPatterns; i++) {
             if (this->patternsByAddress[i].address == address) {
                 for (int l=i; l<this->patternCount; l++) {
                     memcpy(&this->patternsByAddress[l],&this->patternsByAddress[l+1],sizeof(PatternReference));
@@ -282,14 +295,21 @@ void PatternManager::deletePattern(byte n) {
     }
 }
 
+void PatternManager::deletePatternById(uint8_t patternId) {
+    this->deletePattern(this->findPatternById(patternId) - 1); //deals with the offset
+}
+
+bool PatternManager::hasTestPattern() {
+    return this->patternCount != 0 && this->patterns[0].address == 0xffffffff;
+}
+
 uint32_t PatternManager::findInsertLocation(uint32_t len) {
-    for (int i=0; i<this->patternCount; i++) {
-        if (this->patternsByAddress[i].address == 0xffffffff) continue;
-
-        uint32_t firstAvailableSubsector = ((this->patternsByAddress[i].address + this->patternsByAddress[i].len) & 0xfffff000) + 0x1000;
-
+    uint8_t pats = 0;
+    uint8_t addressedPatterns = this->hasTestPattern() ? this->patternCount-1 : this->patternCount;
+    for (int i=0; i<addressedPatterns; i++) {
         if (i == this->patternCount - 1) return i+1; //last pattern
 
+        uint32_t firstAvailableSubsector = ((this->patternsByAddress[i].address + this->patternsByAddress[i].len) & 0xfffff000) + 0x1000;
         uint32_t spaceAfter = this->patternsByAddress[i+1].address - firstAvailableSubsector;
         if (spaceAfter > len) {
             return i+1;
@@ -318,17 +338,7 @@ uint8_t PatternManager::saveLedPatternMetadata(PatternMetadata * pat, bool previ
     ref.address = pat->address;
     ref.len = pat->len;
 
-    Serial.print("inserting ref: ");
-    Serial.print(pat->id);
-    Serial.print(", 0x");
-    Serial.print(pat->address,HEX);
-    Serial.print(", ");
-    Serial.print(pat->len);
-    Serial.println();
-
     byte insertloc = this->insertPatternReference(&ref);
-    //Serial.print("inserted: ");
-    //Serial.println(insertloc);
 
     byte patternIndex = this->patternCount;
     if (previewPattern) patternIndex = 0;
@@ -339,7 +349,6 @@ uint8_t PatternManager::saveLedPatternMetadata(PatternMetadata * pat, bool previ
     if (!previewPattern) this->patternCount++;
     this->saveReferenceTable();
 
-    Serial.println("saved ref table..");
     this->echoPatternTable();
 
     return pat->id;
@@ -356,15 +365,26 @@ void PatternManager::saveLedPatternBody(uint8_t patternId, uint32_t patternStart
     uint8_t patternIndex = this->findPatternById(patternId);
     if (patternIndex == 0xff) return;
 
-    Serial.print("writing pattern body index: ");
-    Serial.println(patternIndex);
-
     PatternMetadata * pat = &this->patterns[patternIndex];
 
     uint32_t writeLocation = pat->address + 0x100 + patternStartPage*0x100;
 
-    Serial.print("loc: 0x");
-    Serial.println(writeLocation,HEX);
+    byte checkbuf[len];
+    this->flash->readBytes(writeLocation,(byte*)&checkbuf,len);
+    bool clean = true;
+    for (int i=0; i<len; i++) {
+        if (checkbuf[i] != 0xff) {
+            clean = false;
+            break;
+        }
+    }
+    Serial.print("Writing pattern ");
+    Serial.print(patternId);
+    Serial.print(" [0x");
+    Serial.print(writeLocation,HEX);
+    Serial.print("]");
+    if (clean == false) Serial.print(" UNCLEAN!");
+    Serial.println();
 
     this->flash->programBytes(writeLocation,payload,len);
 }
@@ -393,8 +413,12 @@ int PatternManager::getPatternCount() {
     return this->patternCount-1;
 }
 
-byte PatternManager::getSelectedPattern() {
+byte PatternManager::getSelectedPatternIndex() {
     return this->selectedPattern-1;
+}
+
+byte PatternManager::getSelectedPattern() {
+    return this->getActivePattern()->id;
 }
 
 int PatternManager::getCurrentFrame() {
@@ -505,10 +529,6 @@ int PatternManager::serializePatterns(char * buf, int bufferSize) {
 
     bool first = true;
     for (int i=1; i<this->patternCount; i++) {
-        //Serial.print("pattern loop: ");
-        //Serial.print(i);
-        //Serial.print("size: ");
-        //Serial.println(bufferSize);
         if (!first) {
             size = snprintf(ptr,bufferSize,",");
             ptr += size;
@@ -516,7 +536,7 @@ int PatternManager::serializePatterns(char * buf, int bufferSize) {
         }
         pat = &this->patterns[i];
 
-        size = snprintf(ptr,bufferSize,"{\"index\":%d,\"name\":\"%s\",\"address\":%d,\"length\":%d,\"frames\":%d,\"flags\":%d,\"fps\":%d}",i,pat->name,pat->address,pat->len,pat->frames,pat->flags,pat->fps);
+        size = snprintf(ptr,bufferSize,"{\"id\":%d,\"name\":\"%s\",\"address\":%d,\"length\":%d,\"frames\":%d,\"flags\":%d,\"fps\":%d}",pat->id,pat->name,pat->address,pat->len,pat->frames,pat->flags,pat->fps);
         ptr += size;
         bufferSize -= size;
         first = false;

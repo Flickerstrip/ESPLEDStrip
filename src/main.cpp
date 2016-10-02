@@ -963,11 +963,19 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
         sendOk(&client);
     } else if (strcmp(urlval,"/pattern/forget") == 0) {
         bool success = getInteger(buf,"index",&val);
-        if (!success) return false;
-        patternManager.deletePattern(val);
-        sendOk(&client);
-        Serial.println("deleted pattern:");
-        patternManager.echoPatternTable();
+        if (success) {
+            patternManager.deletePattern(val);
+            sendOk(&client);
+        }
+
+        success = getInteger(buf,"id",&val);
+        if (success) {
+            if (!patternManager.isValidPatternId(val)) return false;
+            patternManager.deletePatternById(val);
+            sendOk(&client);
+        }
+
+        return false;
     } else if (strcmp(urlval,"/pattern/frame") == 0) {
         bool success = getInteger(buf,"value",&val);
         if (!success) return false;
@@ -975,17 +983,24 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
         sendOk(&client);
     } else if (strcmp(urlval,"/pattern/select") == 0) {
         bool success = getInteger(buf,"index",&val);
-        if (!success) return false;
-        selectPattern(val);
-        sendOk(&client);
+        if (success) {
+            selectPattern(val);
+            sendOk(&client);
+        }
+        success = getInteger(buf,"id",&val);
+        if (success) {
+            if (!patternManager.isValidPatternId(val)) return false;
+            patternManager.selectPatternById(val);
+            sendOk(&client);
+        }
+
+        return false;
     } else if (strcmp(urlval,"/pattern/create") == 0) {
         uint8_t id = 0xff;
         bool success = getInteger(buf,"id",&val);
         if (success) {
             //When ID is present, we assume that we're adding data to an existing pattern (or replacing that pattern)
             id = val;
-            Serial.print("found id: ");
-            Serial.println(id);
             if (!patternManager.isValidPatternId(id)) return false;
         } else {
             //If the ID isn't present, check for the pattern definition GET parameters. If they're all there, we can create the pattern this way.
@@ -1002,17 +1017,11 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
             if (len == -1) success = false;
 
             if (success) {
-                Serial.println("creating patttern metadata");
-                Serial.print("frames: ");
-                Serial.println(frames);
-                Serial.print("pixels: ");
-                Serial.println(pixels);
-                Serial.print("fps: ");
-                Serial.println(fps);
-
                 //We have all the information we need in the get string, create the metadata!
                 PatternMetadata pat;
                 memcpy(pat.name,nameptr,len);
+                pat.name[len] = 0;
+                urlDecode((char*)&pat.name,len);
                 pat.frames = frames;
                 pat.len = pixels * frames * 3;
                 pat.fps = fps;
@@ -1023,9 +1032,6 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
 
         if (id != 0xff) {
             //**************** SAVE PATTERN FROM BINARY FORMAT ************//
-            Serial.print("Saving pattern: ");
-            Serial.println(id);
-
             uint32_t remaining = contentLength;
 
             int page = 0;
@@ -1040,7 +1046,6 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
                 debugHex((char*)&pagebuffer,0x100);
                 */
                 if (readSize != pageReadSize) {
-                    Serial.println("Short read!");
                     return false;
                 }
                 remaining -= readSize;
@@ -1082,8 +1087,6 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
                 }
                 patternManager.selectPatternById(id);
             }
-            Serial.print("Saved pattern: ");
-            Serial.println(pat.name);
         }
 
         StaticJsonBuffer<200> outBuffer;
@@ -1119,7 +1122,6 @@ void handleWebClient(WiFiClient & client) {
 }
 
 void startSSDP() {
-    Serial.printf("Starting SSDP...\n");
     SSDP.setSchemaURL("description.xml");
     SSDP.setHTTPPort(80);
     SSDP.setName("Flickerstrip LED Strip");

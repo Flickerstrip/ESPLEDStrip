@@ -122,8 +122,12 @@ int findGet(const char * buf, char ** loc, const char * key) {
   char * ptr = strchr(url,'?');
   if (ptr == NULL) return -1;
 
-  ptr = strstr(ptr+1,key);
-  if (ptr == NULL) return -1;
+  char * getStart = ptr;
+  while(1) {
+      ptr = strstr(ptr+1,key);
+      if (ptr == NULL) return -1;
+      if (ptr-1 == getStart || ptr[-1] == '&') break;
+  }
 
   char * a = strchr(ptr+1,' ');
   char * b = strchr(ptr+1,'&');
@@ -134,6 +138,7 @@ int findGet(const char * buf, char ** loc, const char * key) {
   if (a == NULL) return -1;
 
   loc[0] = ptr + strlen(key) + 1;
+  if (a < loc[0]) return 0;
   return a - loc[0];
 }
 
@@ -151,6 +156,46 @@ bool getInteger(const char * buf, const char * key, int * val) {
   } else {
     return false;
   }
+}
+
+//From http://arduino.stackexchange.com/questions/18007/simple-url-decoding
+void urlDecode(char* str, int n) {
+    // Create two pointers that point to the start of the data
+    char* leader = str;
+    char* follower = leader;
+
+    // While we're not at the end of the string (current character not NULL)
+    while (*leader && leader-str < n) {
+        // Check to see if the current character is a %
+        if (*leader == '%') {
+
+            // Grab the next two characters and move leader forwards
+            leader++;
+            char high = *leader;
+            leader++;
+            char low = *leader;
+
+            // Convert ASCII 0-9A-F to a value 0-15
+            if (high > 0x39) high -= 7;
+            high &= 0x0f;
+
+            // Same again for the low byte:
+            if (low > 0x39) low -= 7;
+            low &= 0x0f;
+
+            // Combine the two into a single byte and store in follower:
+            *follower = (high << 4) | low;
+        } else {
+            // All other characters copy verbatim
+            *follower = *leader;
+        }
+
+        // Move both pointers to the next character:
+        leader++;
+        follower++;
+    }
+    // Terminate the new string with a NULL character to trim it off
+    *follower = 0;
 }
 
 
