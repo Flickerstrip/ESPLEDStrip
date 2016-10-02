@@ -26,9 +26,9 @@ public:
     void echoPatternTable();
     void resetPatternsToDefault();
     void clearPatterns();
-    void deletePattern(byte n);
+    void deletePatternByIndex(byte n);
     void deletePatternById(uint8_t patternId);
-    void selectPattern(byte n);
+    void selectPatternByIndex(byte n);
     void selectPatternById(uint8_t patternId);
     bool isValidPatternId(uint8_t patternId);
     void setTransitionDuration(int duration);
@@ -42,7 +42,8 @@ public:
     int getAvailableBlocks();
 
     int getPatternCount();
-    byte getSelectedPattern();
+    byte getSelectedId();
+    byte getSelectedIndex();
     int getCurrentFrame();
     int getPatternIndexByName(const char * name);
     bool isTestPatternActive();

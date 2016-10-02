@@ -140,7 +140,7 @@ void setup() {
     lastSyncSent = -1;
     lastPingCheck = -1;
     pingDelay = 0;
-    patternManager.selectPattern(config.selectedPattern);
+    patternManager.selectPatternByIndex(config.selectedPattern);
 
     digitalWrite(BUTTON_LED,BUTTON_LED_ON);
     Serial.println("ready");
@@ -411,8 +411,8 @@ void serialLine() {
 
 void selectPattern(byte pattern) {
     lastSwitch = millis();
-    patternManager.selectPattern(pattern);
-    config.selectedPattern = patternManager.getSelectedPattern();
+    patternManager.selectPatternByIndex(pattern);
+    config.selectedPattern = patternManager.getSelectedId();
     saveConfiguration();
 }
 
@@ -442,7 +442,7 @@ void sendStatus(WiFiClient * client) {
     GIT_CURRENT_VERSION,
     isPowerOn(),
     mac,
-    patternManager.getSelectedPattern(),
+    patternManager.getSelectedId(),
     config.brightness,
     config.stripLength,
     config.stripStart,
@@ -475,7 +475,7 @@ void sendStatus(WiFiClient * client) {
     root["firmware"] = GIT_CURRENT_VERSION;
     root["power"] = isPowerOn();
     root["mac"] = mac;
-    root["selectedPattern"] = patternManager.getSelectedPattern();
+    root["selectedPattern"] = patternManager.getSelectedId();
     root["brightness"] = config.brightness;
 
     JsonObject& mem = root.createNestedObject("memory");
@@ -507,7 +507,7 @@ void nextMode() {
     if(config.selectedPattern+1 >= patternManager.getPatternCount()) {
         selectPattern(0);
     } else {
-        selectPattern(patternManager.getSelectedPattern()+1);
+        selectPattern(patternManager.getSelectedIndex()+1);
     }
 }
 
@@ -734,10 +734,10 @@ void handleUdpPacket(char * charbuf, int len) {
     if (strcmp(root["command"],"pattern") == 0) {
         if (root.containsKey("index")) {
             int select = root["index"];
-            patternManager.selectPattern(select);
+            patternManager.selectPatternByIndex(select);
         }
         if (root.containsKey("name")) {
-            patternManager.selectPattern(patternManager.getPatternIndexByName(root["name"].asString()));
+            patternManager.selectPatternByIndex(patternManager.getPatternIndexByName(root["name"].asString()));
         }
         patternManager.syncToFrame(0);
     }
@@ -964,7 +964,7 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
     } else if (strcmp(urlval,"/pattern/forget") == 0) {
         bool success = getInteger(buf,"index",&val);
         if (success) {
-            patternManager.deletePattern(val);
+            patternManager.deletePatternByIndex(val);
             sendOk(&client);
         }
 

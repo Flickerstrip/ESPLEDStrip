@@ -236,7 +236,7 @@ void PatternManager::selectPatternByIndex(byte n) {
 void PatternManager::selectPatternById(uint8_t patternId) {
     Serial.print("selecting by id: ");
     Serial.println(patternId);
-    this->selectPattern(this->findPatternById(patternId) - 1); //deals with the offset
+    this->selectPatternByIndex(this->findPatternById(patternId) - 1); //deals with the offset
 }
 
 bool PatternManager::isValidPatternId(uint8_t patternId) {
@@ -288,7 +288,7 @@ void PatternManager::deletePatternByIndex(byte n) {
         }
 
         if (n <= this->selectedPattern) {
-            selectPattern(this->selectedPattern-1);
+            selectPatternByIndex(this->selectedPattern-1);
         }
 
         if (this->patternCount == 0) this->selectedPattern = -1;
@@ -296,7 +296,7 @@ void PatternManager::deletePatternByIndex(byte n) {
 }
 
 void PatternManager::deletePatternById(uint8_t patternId) {
-    this->deletePattern(this->findPatternById(patternId) - 1); //deals with the offset
+    this->deletePatternByIndex(this->findPatternById(patternId) - 1); //deals with the offset
 }
 
 bool PatternManager::hasTestPattern() {
@@ -321,7 +321,7 @@ uint32_t PatternManager::findInsertLocation(uint32_t len) {
 uint8_t PatternManager::saveLedPatternMetadata(PatternMetadata * pat, bool previewPattern) {
     pat->len += 0x100; //we're adding a page for metadata storage
 
-    if (previewPattern) this->deletePattern(-1);
+    if (previewPattern) this->deletePatternByIndex(-1);
 
     byte insert = findInsertLocation(pat->len); //find the memory insert location
     if (insert == 0) {
@@ -413,11 +413,11 @@ int PatternManager::getPatternCount() {
     return this->patternCount-1;
 }
 
-byte PatternManager::getSelectedPatternIndex() {
+byte PatternManager::getSelectedIndex() {
     return this->selectedPattern-1;
 }
 
-byte PatternManager::getSelectedPattern() {
+byte PatternManager::getSelectedId() {
     return this->getActivePattern()->id;
 }
 
