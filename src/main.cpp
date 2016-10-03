@@ -74,6 +74,10 @@ long lastSyncSent;
 long lastPingCheck;
 int pingDelay;
 
+#define MAX_REGISTERED_STRIPS 20
+int registeredStripCount = 0;
+IPAddress registeredStrips[MAX_REGISTERED_STRIPS];
+
 
 /////////////
 bool accessPoint = false;
@@ -108,7 +112,7 @@ void setup() {
     }
 
     if (config.failedBootCounter == 0) { //we've failed to boot a few times.. lets factory reset
-        factoryReset();
+        //factoryReset();
     } else {
         config.failedBootCounter--; //decrement the failed boot counter. This is reset when stability is achived
         saveConfiguration();
@@ -349,6 +353,8 @@ void handleSerial() {
 void serialLine() {
     if (strstr(serialBuffer,"ping") != NULL) {
         Serial.println("pong");
+    } else if (strstr(serialBuffer,"diag") != NULL) {
+        WiFi.printDiag(Serial);
     } else if (strstr(serialBuffer,"mac") != NULL) {
         Serial.println(mac);
     } else if (strstr(serialBuffer,"dc") != NULL) {
@@ -419,8 +425,10 @@ void selectPattern(byte pattern) {
 char patternBuffer[1000];
 void sendStatus(WiFiClient * client) {
 
+
     int n = snprintf(buf,BUFFER_SIZE,"{\
 \"type\":\"status\",\
+\"ap\":%d,\
 \"name\":\"%s\",\
 \"group\":\"%s\",\
 \"firmware\":\"%s\",\
@@ -437,6 +445,7 @@ void sendStatus(WiFiClient * client) {
 \"uptime\":%d,\
 \"memory\":{\"used\":%d,\"free\":%d,\"total\":%d},\
 \"patterns\":",
+    accessPoint,
     config.stripName,
     config.groupName,
     GIT_CURRENT_VERSION,
@@ -1093,6 +1102,25 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
         JsonObject& outRoot = outBuffer.createObject();
         outRoot["id"] = id;
         sendHttp(&client,200,"OK",outRoot);
+    } else if (accessPoint && strcmp(urlval,"/registerStrip") == 0) {
+        IPAddress ip = client.remoteIP();
+        Serial.print("Registered strip: ");
+        Serial.println(ip);
+
+        memcpy(&registeredStrips[registeredStripCount],&ip,sizeof(IPAddress));
+        registeredStripCount++;
+
+        sendOk(&client);
+    } else if (accessPoint && strcmp(urlval,"/registered") == 0) {
+        StaticJsonBuffer<500> buffer;
+        JsonArray& root = buffer.createArray();
+        for (int i=0; i<registeredStripCount; i++) {
+            char ips[16] ;
+            IPAddress ip = registeredStrips[i];
+            sprintf(ips, "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+            root.add(ips);
+        }
+        sendHttp(&client,200,"OK",root);
     } else {
         char content[] = "Not Found";
         sendHttp(&client,404,"Not Found","text/plain",content);
@@ -1135,13 +1163,17 @@ void startSSDP() {
     SSDP.begin();
 }
 
-bool doConnect() {
+bool doConnect(char * ssid, char * password) {
     Serial.print("Connecting to ssid: ");
-    Serial.println(config.ssid);
+    Serial.println(ssid);
     accessPoint = false;
     WiFi.mode(WIFI_STA);
     delay(50);
-    WiFi.begin(config.ssid, config.password);
+    if (strlen(password) == 0) {
+        WiFi.begin(ssid);
+    } else {
+        WiFi.begin(ssid, password);
+    }
 
     connecting = true;
     wl_status_t status = WiFi.status();
@@ -1185,30 +1217,116 @@ bool createAccessPoint() {
     return true;
 }
 
-void loop() {
-    WiFiClient client = server.available();
+bool tryConnect(char * ssid, char * password, int attempts) {
+    for (int i=0; i<attempts; i++) {
+        if (doConnect(ssid, password)) return true;
+    }
+    return false;
+}
 
-    disconnect = false;
-    reconnect = false;
-    while(true) {
-        int attempts = 0;
-        while(!ignoreConfiguredNetwork && attempts <= 3 && strlen(config.ssid)) {
-            attempts++;
-            if (doConnect()) break;
+void checkRegisteredStrips() {
+    for (int i=0; i<registeredStripCount; i++) {
+        tick();
+
+        WiFiClient client;
+        IPAddress * ip = &registeredStrips[i];
+
+        bool success = false;
+        for (int i=0; i<3; i++) {
+            if (client.connect(*ip, 80)) {
+                success = true;
+                break;
+            }
         }
+        if (!success) {
+            //remove it from the list
+            Serial.print("Deregistered: ");
+            Serial.println(*ip);
+
+            for (int l=i; l<registeredStripCount; l++) {
+                memcpy(&registeredStrips[l],&registeredStrips[l]+1,sizeof(IPAddress));
+            }
+            registeredStripCount--;
+            i--;
+        } else {
+            client.print("GET /status HTTP/1.0\r\n\r\n");
+        }
+    }
+}
+
+void registerWithMaster() {
+    Serial.println("Registering with master");
+    WiFiClient client;
+    IPAddress ip = IPAddress(192, 168, 1, 1);
+
+    bool success = false;
+    for (int i=0; i<3; i++) {
+        if (client.connect(ip, 80)) {
+            success = true;
+            break;
+        }
+    }
+    if (!success) return;
+
+    client.print("GET /registerStrip HTTP/1.0\r\n\r\n");
+}
+
+void loop() {
+    WiFi.mode(WIFI_OFF);
+    delay(100);
+
+    while(true) {
+        disconnect = false;
+        reconnect = false;
+        bool connected = false;
+        bool isConfigNetworkSlave = false;
+
+        if (!ignoreConfiguredNetwork && strlen(config.ssid)) connected = tryConnect(config.ssid,config.password,3);
 
         //start own wifi network if we failed to connect above
-        if (WiFi.status() != WL_CONNECTED) createAccessPoint();
+        if (!connected) {
+            int n = WiFi.scanNetworks();
+            bool foundConfigNetwork = false;
+            for (int i = 0; i < n; ++i) {
+                char ssid[50];
+                WiFi.SSID(i).toCharArray(ssid,50);
+                long rssi = WiFi.RSSI(i);
+                bool open = WiFi.encryptionType(i) == ENC_TYPE_NONE;
+
+                if (strcmp((char*)&ssid,(char*)&defaultNetworkName) == 0) {
+                    foundConfigNetwork = true;
+                    break;
+                }
+            }
+            if (foundConfigNetwork) {
+                Serial.println("Found flickerstrip network!");
+                connected = tryConnect(defaultNetworkName,"",3);
+                if (connected) {
+                    registerWithMaster();
+                    isConfigNetworkSlave = true;
+                }
+            }
+
+            if (!connected) connected = createAccessPoint();
+        }
+
+        if (!connected) continue;
 
         startSSDP();
 
         server.begin();
         udp.begin(2836);
 
+        Serial.println("Connected!");
+
         long lastRequest = millis();
+        long lastRegisteredStripCheck = millis();
         while(accessPoint || WiFi.status() == WL_CONNECTED) {
             //Attempt to reconnect to the parent network periodially if we haven't received any requests lately
-            if (accessPoint && millis() - lastRequest > NETWORK_RETRY) reconnect = true;
+            if (strlen(config.ssid) && accessPoint && millis() - lastRequest > NETWORK_RETRY) {
+                Serial.println("Re-attempting configured network");
+                reconnect = true;
+            }
 
             //Obey the disconnect command which forgets the configured network
             if (disconnect) return forgetNetwork();
@@ -1218,6 +1336,11 @@ void loop() {
                 WiFi.mode(WIFI_OFF);
                 Serial.println("reconnecting...");
                 return;
+            }
+
+            if (accessPoint && registeredStripCount > 0 && millis() - lastRegisteredStripCheck > 7000) {
+                checkRegisteredStrips();
+                lastRegisteredStripCheck = millis();
             }
 
             tick();
