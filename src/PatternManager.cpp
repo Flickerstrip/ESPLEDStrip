@@ -147,8 +147,8 @@ void PatternManager::resetPatternsToDefault() {
     PatternMetadata newpat;
     char patternName[] = "Default";
     memcpy(newpat.name, patternName, strlen(patternName)+1);
-    newpat.len = 1*3*50;
     newpat.frames = 50;
+    newpat.pixels = 1;
     newpat.flags = 0;
     newpat.fps = 10;
     int led = 0;
@@ -303,13 +303,19 @@ bool PatternManager::hasTestPattern() {
     return this->patternCount != 0 && this->patterns[0].address == 0xffffffff;
 }
 
-uint32_t PatternManager::findInsertLocation(uint32_t len) {
+int PatternManager::findInsertLocation(uint32_t len) {
     uint8_t pats = 0;
     uint8_t addressedPatterns = this->hasTestPattern() ? this->patternCount-1 : this->patternCount;
     for (int i=0; i<addressedPatterns; i++) {
-        if (i == this->patternCount - 1) return i+1; //last pattern
-
         uint32_t firstAvailableSubsector = ((this->patternsByAddress[i].address + this->patternsByAddress[i].len) & 0xfffff000) + 0x1000;
+
+        if (i == this->patternCount - 1) {
+            uint32_t lastAddressableByte = (NUM_SUBSECTORS * 0x1000) - 1;
+            if (firstAvailableSubsector + len > lastAddressableByte) return -1; //we're out of space!
+
+            return i+1; //last pattern
+        }
+
         uint32_t spaceAfter = this->patternsByAddress[i+1].address - firstAvailableSubsector;
         if (spaceAfter > len) {
             return i+1;
@@ -318,12 +324,13 @@ uint32_t PatternManager::findInsertLocation(uint32_t len) {
     return 0;
 }
 
-uint8_t PatternManager::saveLedPatternMetadata(PatternMetadata * pat, bool previewPattern) {
-    pat->len += 0x100; //we're adding a page for metadata storage
+int PatternManager::saveLedPatternMetadata(PatternMetadata * pat, bool previewPattern) {
+    pat->len = pat->pixels * pat->frames * 3 + 0x100; //calculate the memory footprint
 
     if (previewPattern) this->deletePatternByIndex(-1);
 
-    byte insert = findInsertLocation(pat->len); //find the memory insert location
+    int insert = findInsertLocation(pat->len); //find the memory insert location
+    if (insert == -1) return -1;
     if (insert == 0) {
         pat->address = 0;
     } else {
@@ -396,6 +403,8 @@ int PatternManager::getTotalBlocks() {
 int PatternManager::getUsedBlocks() {
     int blocksUsed = 0;
     for (int i=0; i<this->patternCount;i++) {
+        if (this->patterns[i].address == 0xffffffff) continue;
+
         uint32_t usedPages = this->patterns[i].len / 0x100;
         if (this->patterns[i].len % 0x100 != 0) usedPages++;
 
@@ -427,8 +436,9 @@ int PatternManager::getCurrentFrame() {
 
 int PatternManager::getPatternIndexByName(const char * name) {
     for (int i=0; i<this->patternCount; i++) {
+        if (this->patterns[i].address == 0xffffffff) continue;
         if (strcmp(this->patterns[i].name,name) == 0) {
-            return i;
+            return i-1;
         }
     }
     return -1;
@@ -536,7 +546,7 @@ int PatternManager::serializePatterns(char * buf, int bufferSize) {
         }
         pat = &this->patterns[i];
 
-        size = snprintf(ptr,bufferSize,"{\"id\":%d,\"name\":\"%s\",\"address\":%d,\"length\":%d,\"frames\":%d,\"flags\":%d,\"fps\":%d}",pat->id,pat->name,pat->address,pat->len,pat->frames,pat->flags,pat->fps);
+        size = snprintf(ptr,bufferSize,"{\"id\":%d,\"name\":\"%s\",\"frames\":%d,\"pixels\":%d,\"flags\":%d,\"fps\":%d}",pat->id,pat->name,pat->frames,pat->pixels,pat->flags,pat->fps);
         ptr += size;
         bufferSize -= size;
         first = false;
@@ -553,12 +563,42 @@ int PatternManager::serializePatterns(char * buf, int bufferSize) {
 void PatternManager::jsonPatterns(JsonArray& arr) {
     for (int i=1; i<this->patternCount; i++) {
         JsonObject& json = arr.createNestedObject();
-        json["index"] = i;
+        json["id"] = this->patterns[i].id;
         json["name"] = this->patterns[i].name;
-        json["address"] = this->patterns[i].address;
-        json["length"] = this->patterns[i].len;
         json["frames"] = this->patterns[i].frames;
+        json["pixels"] = this->patterns[i].pixels;
         json["flags"] = this->patterns[i].flags;
         json["fps"] = this->patterns[i].fps;
+    }
+}
+
+int PatternManager::getPatternDataLength(uint8_t patternId) {
+    uint8_t patternIndex = this->findPatternById(patternId);
+    if (patternIndex == 0xff) return -1;
+
+    PatternMetadata * pat = &this->patterns[patternIndex];
+    return pat->len-0x100;
+}
+
+void PatternManager::writePatternData(uint8_t patternId, Stream * stream) {
+    uint8_t patternIndex = this->findPatternById(patternId);
+    if (patternIndex == 0xff) return;
+
+    PatternMetadata * pat = &this->patterns[patternIndex];
+
+    byte readbuf[0x100];
+    for (uint32_t readOffset=0; readOffset<pat->len-0x100; readOffset += 0x100) {
+        //read page
+        uint32_t readLocation = pat->address + 0x100 + readOffset;
+        uint32_t readLength = min(0x100,pat->len - 0x100 - readOffset);
+        Serial.print("reading at 0x");
+        Serial.print(readLocation,HEX);
+        Serial.print(" [");
+        Serial.print(readLength);
+        Serial.print("]");
+        Serial.println();
+        this->flash->readBytes(readLocation,(byte*)&readbuf,readLength);
+        stream->write(readbuf,readLength);
+        Serial.println("wrote page");
     }
 }

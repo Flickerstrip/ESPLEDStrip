@@ -513,7 +513,7 @@ void patternTick() {
 }
 
 void nextMode() {
-    if(config.selectedPattern+1 >= patternManager.getPatternCount()) {
+    if(patternManager.getSelectedIndex()+1 >= patternManager.getPatternCount()) {
         selectPattern(0);
     } else {
         selectPattern(patternManager.getSelectedIndex()+1);
@@ -928,6 +928,20 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
     } else if (strcmp(urlval,"/pattern/next") == 0) {
         nextMode();
         sendOk(&client);
+    } else if (strcmp(urlval,"/pattern/download") == 0) {
+        bool success = getInteger(buf,"id",&val);
+        if (success) {
+            if (!patternManager.isValidPatternId(val)) return false;
+
+            char buffer[300];
+            int n = snprintf(buffer,300,"HTTP/1.0 200 OK\r\nContent-Type: application/octet-stream\r\nConnection: close\r\nContent-Length:%d\r\n\r\n",patternManager.getPatternDataLength(val));
+            client.write((char*)&buffer,n);
+
+            patternManager.writePatternData(val,&client);
+            sendOk(&client);
+        }
+
+        return false;
     } else if (strcmp(urlval,"/power/on") == 0) {
         toggleStrip(true);
         sendOk(&client);
@@ -1032,10 +1046,12 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
                 pat.name[len] = 0;
                 urlDecode((char*)&pat.name,len);
                 pat.frames = frames;
+                pat.pixels = pixels;
                 pat.len = pixels * frames * 3;
                 pat.fps = fps;
 
                 id = patternManager.saveLedPatternMetadata(&pat,previewPattern);
+                if (id == -1) return false;
             }
         }
 
@@ -1083,6 +1099,7 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
             bool previewPattern = root.containsKey("preview") && root["preview"].as<bool>();
 
             id = patternManager.saveLedPatternMetadata(&pat,previewPattern);
+            if (id == -1) return false;
 
             const char * data = root["pixelData"].asString();
             if (root.containsKey("pixelData")) {

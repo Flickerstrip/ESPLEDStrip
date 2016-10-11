@@ -33,8 +33,8 @@ public:
     bool isValidPatternId(uint8_t patternId);
     void setTransitionDuration(int duration);
     bool hasTestPattern();
-    uint32_t findInsertLocation(uint32_t len);
-    uint8_t saveLedPatternMetadata(PatternMetadata * pat, bool previewPattern);
+    int findInsertLocation(uint32_t len);
+    int saveLedPatternMetadata(PatternMetadata * pat, bool previewPattern);
     void saveLedPatternBody(uint8_t patternId, uint32_t patternStartPage, byte * payload, uint32_t len);
 
     int getTotalBlocks();
@@ -53,11 +53,15 @@ public:
     void syncToFrame(int frame,int pingDelay = 0);
     void freezeFrame(int frame);
     bool loadNextFrame(LEDStrip * strip);
+
     int serializePatterns(char * buf, int len);
     void jsonPatterns(JsonArray& json);
 
+    int getPatternDataLength(uint8_t patternId);
+    void writePatternData(uint8_t patternId, Stream * stream);
+
 private:
-    const static int NUM_SUBSECTORS = 250; //TODO update me for 16M flash
+    const static int NUM_SUBSECTORS = 512;
 
     M25PXFlashMemory * flash;
 

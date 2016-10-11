@@ -10,6 +10,7 @@ struct PatternMetadata {
   uint32_t address;
   uint32_t len;
   uint16_t frames;
+  uint16_t pixels;
   uint8_t flags;
   uint8_t fps; //TODO: make this a double
 };
