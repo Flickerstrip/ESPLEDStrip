@@ -1059,24 +1059,49 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
             //**************** SAVE PATTERN FROM BINARY FORMAT ************//
             uint32_t remaining = contentLength;
 
+            //client.setNoDelay(true);
+            //client.setNonBlocking(true);
+            //Serial.print("avail: ");
+            //Serial.println(client.available());
+            //sendChunkedHttp(&client,200,"OK","application/json");
+            //Serial.print("avail: ");
+            //Serial.println(client.available());
+
             int page = 0;
             int readSize;
+            long start = millis();
             byte pagebuffer[0x100];
+            //Serial.println("starting loop..");
             while(remaining > 0) {
                 int pageReadSize = 0x100;
                 if (remaining < pageReadSize) pageReadSize = remaining;
-                readSize = readBytes(client,(char*)&pagebuffer,0x100,1000);
-                /*
-                Serial.println("read page: ");
-                debugHex((char*)&pagebuffer,0x100);
-                */
+                readSize = readBytes(client,(char*)&pagebuffer,pageReadSize,1000);
                 if (readSize != pageReadSize) {
+                    Serial.println("MISMATCHED READ!!");
+                    Serial.println(readSize,HEX);
                     return false;
                 }
                 remaining -= readSize;
                 patternManager.saveLedPatternBody(id,page++,(byte*)&pagebuffer,0x100);
+                //Serial.println("finished saving body..");
+
+                //int percent = floor(100.0 * (double)(contentLength - remaining) / double(contentLength));
+                //char res[20];
+                //int n = snprintf(res,20,"%d\n",percent);
+                //n = snprintf(res,20,"%x\r\n%d\n\r\n",n,percent);
+                //start = millis();
+                //Serial.println("writing..");
+                //debugHex((char*)&res,20);
+                //client.write((byte*)&res,n);
+                //Serial.print("time: ");
+                //Serial.println(millis() - start);
             }
+            //Serial.println("TRANSFER COMPLETE");
             patternManager.selectPatternById(id);
+
+            //client.println(0);
+            //client.println();
+            //return true;
         } else {
             //**************** Entirely JSON body ************//
             char body[contentLength+1];

@@ -18,6 +18,15 @@ void sendHttp(WiFiClient * client, int statusCode, const char * statusText, Json
   client->write((uint8_t*)buffer,n);
 }
 
+void sendChunkedHttp(WiFiClient * client, int statusCode, const char * statusText, const char * contentType) {
+  char buffer[300];
+  int n = snprintf(buffer,300,"HTTP/1.1 %d %s\r\nContent-Type: %s\r\nTransfer-Encoding: chunked\r\n\r\n",statusCode,statusText,contentType);
+
+  debugHex((char*)&buffer,n);
+
+  client->write((uint8_t*)buffer,n);
+}
+
 void sendHttp(WiFiClient * client, int statusCode, const char * statusText, JsonObject& json) {
   int contentLength = json.measureLength();
   char buffer[contentLength+300];
