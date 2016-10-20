@@ -48,8 +48,6 @@ bool RunningPattern::needsUpdate() {
 void RunningPattern::loadFrame(LEDStrip * strip, M25PXFlashMemory * flash, float multiplier, int frame) {
   if (this->pattern == NULL) return;
 
-  frame = 0;
-
   uint32_t startAddress = this->pattern->address + 0x100 + (this->pattern->pixels * 3 * frame);
 
   byte * bbuf = (byte*)this->buf;

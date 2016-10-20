@@ -1,9 +1,5 @@
 // vim:ts=4 sw=4:
 
-#define FASTLED_DEBUG_COUNT_FRAME_RETRIES 1
-#define FASTLED_ALLOW_INTERRUPTS 0
-#include "FastLED.h"
-
 #include "Arduino.h"
 #include <ESP8266WiFi.h>
 #include <EEPROM.h>

@@ -488,7 +488,6 @@ bool PatternManager::loadNextFrame(LEDStrip * strip) {
     }
 
     if (!needsUpdate && millis() - this->lastFrame < 30) {
-    //if (!needsUpdate) {
         return false;
     }
 
