@@ -1,5 +1,9 @@
 // vim:ts=4 sw=4:
 
+#define FASTLED_DEBUG_COUNT_FRAME_RETRIES 1
+#define FASTLED_ALLOW_INTERRUPTS 0
+#include "FastLED.h"
+
 #include "Arduino.h"
 #include <ESP8266WiFi.h>
 #include <EEPROM.h>
@@ -13,9 +17,6 @@
 #include <ESP8266HTTPUpdateServer.h>
 #include <ArduinoJson.h>
 #include "Base64.h"
-
-#define FASTLED_ESP8266_RAW_PIN_ORDER
-#include "FastLED.h"
 
 //Libraries maintained by Flickerstrip
 #include <SoftwareSPI.h>
@@ -85,6 +86,8 @@ bool ignoreConfiguredNetwork = false;
 
 byte heldTriggered = 0;
 /////////////
+
+bool globalDebug = false;
 
 void setup() {
     Serial.begin(115200);
@@ -355,6 +358,8 @@ void serialLine() {
         Serial.println("pong");
     } else if (strstr(serialBuffer,"diag") != NULL) {
         WiFi.printDiag(Serial);
+    } else if (strstr(serialBuffer,"db") != NULL) {
+        globalDebug = !globalDebug;
     } else if (strstr(serialBuffer,"mac") != NULL) {
         Serial.println(mac);
     } else if (strstr(serialBuffer,"dc") != NULL) {

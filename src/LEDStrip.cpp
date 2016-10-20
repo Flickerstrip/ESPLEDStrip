@@ -1,6 +1,8 @@
 // vim:ts=4 sw=4:
 #include "LEDStrip.h"
 
+void debugHex(const char *buf, int len);
+
 LEDStrip::LEDStrip() {
   this->length = 1;
   this->ledBuffer = NULL;
@@ -106,5 +108,7 @@ void LEDStrip::setBrightness(byte brightness) {
 
 void LEDStrip::show() {
   if (this->controller == NULL) return;
+  //Serial.println("showing LEDs");
+  //debugHex((char*)this->ledBuffer,this->length*sizeof(CRGB));
   this->controller->showLeds(this->brightness);
 }

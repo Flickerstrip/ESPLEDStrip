@@ -12,6 +12,8 @@
 #include "PatternMetadata.h"
 #include <M25PXFlashMemory.h>
 
+extern bool globalDebug;
+
 class RunningPattern {
 public:
   RunningPattern();
