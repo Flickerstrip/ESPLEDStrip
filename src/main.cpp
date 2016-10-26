@@ -135,9 +135,7 @@ void setup() {
 
     Serial.print("Loaded ");
     Serial.print(patternManager.getPatternCount());
-    Serial.println(" patterns:");
-    patternManager.echoPatternTable();
-    Serial.println();
+    Serial.println(" patterns");
 
     lastSyncReceived = millis() + 3000;
     lastSyncSent = -1;
@@ -302,12 +300,6 @@ bool loadConfiguration() {
 void saveConfiguration() {
     EEPROM.begin(EEPROM_SIZE); //IMPORTANT: Use EEPROM_SIZE or EEPROM will be cleared down to this parameter
     for (int i=0; i<sizeof(Configuration); i++) {
-        /*
-        Serial.print("writing ");
-        Serial.print(i);
-        Serial.print(" = ");
-        Serial.println(((byte *)(&config))[i]);
-        */
         EEPROM.write(i,((byte *)(&config))[i]);
     }
     EEPROM.end();
@@ -649,13 +641,13 @@ void ledTick() {
 }
 
 void broadcastUdp(char * buf, int len) {
-        Serial.print("SND: ");
-        buf[len] = 0;
-        Serial.println(buf);
-        IPAddress ip = IPAddress(255, 255, 255, 255);
-        udp.beginPacket(ip, 2836);
-        udp.write(buf, len);
-        udp.endPacket();
+    Serial.print("SND: ");
+    buf[len] = 0;
+    Serial.println(buf);
+    IPAddress ip = IPAddress(255, 255, 255, 255);
+    udp.beginPacket(ip, 2836);
+    udp.write(buf, len);
+    udp.endPacket();
 }
 
 void syncTick() {
@@ -753,42 +745,73 @@ void handleUdpPacket(char * charbuf, int len) {
     }
 }
 
-void loadFirmware(WiFiClient & client, uint32_t uploadSize) {
-        Serial.print("FIRMWARE: ");
-        Serial.println(uploadSize);
+void loadFirmware(WiFiClient & client, uint32_t packetSize, char * boundary) {
+        uint32_t written = 0;
+        byte updateBuffer[1001];
 
-        uint32_t totalBytesRead = 0;
-        if(!Update.begin(uploadSize)){
-            Serial.println("Update Begin Error");
-            return;
+        uint32_t updateSize = 0;
+        int boundaryLength = strlen(boundary);
+
+        if (boundaryLength != 0) {
+            while(true) {
+                int n = readUntil(&client,(char*)updateBuffer,1000,boundary,2000);
+                if (n == 0) return;
+                n = readUntil(&client,(char*)updateBuffer,1000,"\r\n\r\n",2000);
+                if (n == 0) return;
+                updateBuffer[n] = 0;
+
+                updateSize = getContentLength((char*)updateBuffer);
+
+                char * type;
+                n = getHeader((char*)updateBuffer,n,"Content-Type",&type);
+                if (n == 0) continue;
+
+                type[n] = 0;
+                while(type[0] == ' ') type++;
+
+                if (strncmp(type,"application/octet-stream",n) == 0) break;
+            }
         } else {
-            Serial.println("begin success");
+            updateSize = packetSize;
         }
 
-        uint32_t written = 0;
-        byte updateBuffer[1000];
+        Serial.print("Update Size: ");
+        Serial.println(updateSize);
+        if(!Update.begin(updateSize)){
+            Serial.println("Update.begin Error!");
+            return;
+        } else {
+            Serial.println("Begin Update");
+        }
+        
         while(!Update.isFinished()) {
             yield();
-            int n = readBytes(client,(char*)updateBuffer,1000,2000);
+            int n;
+            if (boundaryLength == 0) {
+                n = readBytes(client,(char*)updateBuffer,1000,2000);
+            } else {
+                n = readUntil(&client,(char*)updateBuffer,1000,boundary,2000);
+                if (memcmp((char*)(updateBuffer + n - boundaryLength),boundary,boundaryLength) == 0) {
+                    n = n - boundaryLength - 2;
+                }
+            }
+            updateBuffer[n] = 0;
             if (n == 0) {
                 Serial.println("readBytes returned nothing!");
                 return;
             }
-            //Serial.println("running update.write");
             yield();
             written += Update.write(updateBuffer,n);
             yield();
             if (written % 10000 <= 1000) {
                 Serial.print(written);
                 Serial.print(" of ");
-                Serial.print(uploadSize);
+                Serial.print(updateSize);
                 Serial.print(" ");
-                Serial.print((written*100)/uploadSize);
+                Serial.print((written*100)/updateSize);
                 Serial.println("%");
             }
-            //if (written > 0) client.write(1);
         }
-        Serial.println("end of update loop");
 
         if(Update.end()){
             Serial.printf("Update Success\nRebooting...\n");
@@ -839,7 +862,10 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
     if (strcmp(urlval,"/update") == 0) {
         Serial.println("Updating firmware!!");
 
-        loadFirmware(client,contentLength);
+        char boundary[100];
+        getBoundary(buf,n,(char*)&boundary);
+
+        loadFirmware(client,contentLength,(char*)&boundary);
         sendErr(&client,"Update failed");
         return true;
     }
@@ -1172,7 +1198,7 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
 }
 
 void handleWebClient(WiFiClient & client) {
-    int n = readUntil(&client,buf,"\r\n\r\n",1000);
+    int n = readUntil(&client,buf,BUFFER_SIZE,"\r\n\r\n",1000);
     if (n == 0) {
         Serial.println("failed to read header!");
         client.stop();

@@ -76,12 +76,12 @@ int readBytes(WiFiClient & client, char * buf, int length, int timeout) {
   return bytesRead;
 }
 
-int readUntil(WiFiClient * client, char * buffer, const char * search, long timeout) {
+int readUntil(WiFiClient * client, char * buffer, int length, const char * search, long timeout) {
   long start = millis();
   int n = 0;
   int i = 0;
   int searchlen = strlen(search);
-  while(client->connected()) {
+  while(n < length && client->connected()) {
     if (millis() - start > timeout) break;
 
     int b = client->read();
@@ -106,6 +106,34 @@ int getContentLength(const char * buf) {
   ptr += strlen(search);
   while(ptr[0] == '\n' || ptr[0] == '\r' || ptr[0] == '\t' || ptr[0] == ' ') ptr++;
   return atoi(ptr);
+}
+
+int getHeader(const char * buf, int n, const char * field, char ** retptr) {
+    char * ptr = (char*)stristr(buf,field); //TODO this should respect the n field
+    if (ptr == NULL) return 0;
+    ptr = strstr(ptr,":");
+    retptr[0] = (ptr + 1);
+    while(*retptr[0] == 20) retptr[0]++;
+    ptr = strstr(ptr,"\r\n");
+    return ptr - *retptr;
+}
+
+int getBoundary(const char * buf, int n, char * boundary) {
+    boundary[0] = 0;
+    char * contentType;
+    int len = getHeader(buf,n,"Content-Type",&contentType);
+    if (len == 0) return 0;
+
+    char * ptr = strstr(contentType,"boundary=");
+    if (ptr == NULL) return 0;
+    ptr = strstr(ptr,"=") + 1;
+    char * end = strstr(ptr,"\r\n");
+
+    memcpy(boundary+2,ptr,end-ptr);
+    boundary[0]='-';
+    boundary[1]='-';
+    boundary[end-ptr + 2] = 0;
+    return end-ptr + 2;
 }
 
 int findUrl(const char * buf, char ** loc) {

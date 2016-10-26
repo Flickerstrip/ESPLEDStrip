@@ -36,7 +36,7 @@ void ledTick();
 void broadcastUdp(char * buf, int len);
 void syncTick();
 void handleUdpPacket(char * charbuf, int len);
-void loadFirmware(WiFiClient & client, uint32_t uploadSize);
+void loadFirmware(WiFiClient & client, uint32_t uploadSize, char * boundary);
 int getPostParam(const char * content, const char * key, char * dst, int dstSize);
 bool handleRequest(WiFiClient & client, char * buf, int n);
 void handleWebClient(WiFiClient & client);
