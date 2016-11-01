@@ -8,6 +8,7 @@
 #include "WProgram.h"
 #endif
 
+#include "defaultPatterns.h"
 #include "LEDStrip.h"
 #include "RunningPattern.h"
 #include "PatternMetadata.h"
@@ -24,6 +25,7 @@ public:
 
     void loadPatterns();
     void echoPatternTable();
+    void addPatternFromProgmem(const char * name, int frames, int pixels, int fps, const byte * data, int n);
     void resetPatternsToDefault();
     void clearPatterns();
     void deletePatternByIndex(byte n);

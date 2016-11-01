@@ -141,50 +141,41 @@ void PatternManager::echoPatternTable() {
     }
 }
 
+void PatternManager::addPatternFromProgmem(const char * name, int frames, int pixels, int fps, const byte * data, int n) {
+    PatternMetadata newpat;
+    memcpy(newpat.name, name, strlen(name)+1);
+    newpat.frames = frames;
+    newpat.pixels = pixels;
+    newpat.fps = fps;
+    newpat.flags = 0;
+
+    uint8_t id = this->saveLedPatternMetadata(&newpat,false);
+
+    int remaining = n;
+    int page = 0;
+    while(remaining > 0) {
+        int pageReadSize = 0x100;
+        if (remaining < pageReadSize) pageReadSize = remaining;
+        for (int i=0; i<pageReadSize; i++) {
+            byte a = pgm_read_byte_near(data+i+(page*0x100));
+            this->buf[i] = a;
+        }
+        remaining -= pageReadSize;
+        this->saveLedPatternBody(id,page++,(byte*)&buf,0x100);
+    }
+}
+
 void PatternManager::resetPatternsToDefault() {
     this->clearPatterns();
 
-    PatternMetadata newpat;
-    char patternName[] = "Default";
-    memcpy(newpat.name, patternName, strlen(patternName)+1);
-    newpat.frames = 50;
-    newpat.pixels = 1;
-    newpat.flags = 0;
-    newpat.fps = 10;
-    int led = 0;
-    for (int i=0; i<10; i++) {
-        this->buf[led*3+0] = i*25;
-        this->buf[led*3+1] = 0;
-        this->buf[led*3+2] = 0;
-        led++;
-    }
-    for (int i=0; i<10; i++) {
-        this->buf[led*3+0] = 250-i*25;
-        this->buf[led*3+1] = i*25;
-        this->buf[led*3+2] = 0;
-        led++;
-    }
-    for (int i=0; i<10; i++) {
-        this->buf[led*3+0] = 0;
-        this->buf[led*3+1] = 250-i*25;
-        this->buf[led*3+2] = i*25;
-        led++;
-    }
-    for (int i=0; i<10; i++) {
-        this->buf[led*3+0] = i*25;
-        this->buf[led*3+1] = i*25;
-        this->buf[led*3+2] = 250;
-        led++;
-    }
-    for (int i=0; i<10; i++) {
-        this->buf[led*3+0] = 250-i*25;
-        this->buf[led*3+1] = 250-i*25;
-        this->buf[led*3+2] = 250-i*25;
-        led++;
-    }
+    this->addPatternFromProgmem("Default",7,7,3,defaultData,DEFAULT_SIZE);
+    this->addPatternFromProgmem("Chasing Rainbow 15",270,15,18,chasingData,CHASING_SIZE);
+    this->addPatternFromProgmem("3ColorComets",30,30,20,cometsData,COMETS_SIZE);
+    this->addPatternFromProgmem("Rainbow Pixel",18,18,10,rainbowpixelData,RAINBOWPIXEL_SIZE);
+    this->addPatternFromProgmem("Warp",18,25,15,warpData,WARP_SIZE);
+    this->addPatternFromProgmem("Fire Sparkle",100,100,30,sparkleData,SPARKLE_SIZE);
+    this->addPatternFromProgmem("Rainbow Chase",150,150,3,chaseData,CHASE_SIZE);
 
-    uint8_t id = this->saveLedPatternMetadata(&newpat,false);
-    this->saveLedPatternBody(id,0,(byte*)this->buf,newpat.len);
 }
 
 void PatternManager::clearPatterns() {
@@ -234,8 +225,6 @@ void PatternManager::selectPatternByIndex(byte n) {
 }
 
 void PatternManager::selectPatternById(uint8_t patternId) {
-    Serial.print("selecting by id: ");
-    Serial.println(patternId);
     this->selectPatternByIndex(this->findPatternById(patternId) - 1); //deals with the offset
 }
 
