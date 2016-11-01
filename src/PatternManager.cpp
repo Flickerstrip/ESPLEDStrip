@@ -174,7 +174,7 @@ void PatternManager::resetPatternsToDefault() {
     this->addPatternFromProgmem("Rainbow Pixel",18,18,10,rainbowpixelData,RAINBOWPIXEL_SIZE);
     this->addPatternFromProgmem("Warp",18,25,15,warpData,WARP_SIZE);
     this->addPatternFromProgmem("Fire Sparkle",100,100,30,sparkleData,SPARKLE_SIZE);
-    this->addPatternFromProgmem("Rainbow Chase",150,150,3,chaseData,CHASE_SIZE);
+    this->addPatternFromProgmem("Rainbow Chase",150,150,30,chaseData,CHASE_SIZE);
 
 }
 
