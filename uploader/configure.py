@@ -53,7 +53,7 @@ def readUntil(sentinel,includeNewline,timeout=3):
     while(True):
         buf += ser.read()
         if (time.time() > now + timeout):
-            raise RuntimeError("timeout");
+            raise RuntimeError("timeout while looking for '%s'" % sentinel);
         if (buf.find(sentinel) > 0):
             break;
     if (includeNewline): ser.readline();
@@ -81,8 +81,8 @@ def main(ser):
     ser.write("mac\n");
     ser.readline() #echoed line
     mac = ser.readline().strip(); #mac address
-    if not re.match("[0-9a-f]{2}([-:])[0-9a-f]{2}(\\1[0-9a-f]{2}){4}$", mac.lower()):
-        raise RuntimeError("Failed to read mac address!");
+    if not re.match("[0-9a-f]{1,2}([-:])[0-9a-f]{1,2}(\\1[0-9a-f]{1,2}){4}$", mac.lower()):
+        raise RuntimeError("Failed to read mac address!",mac);
 
     thisEntry = None;
     for unit in info:
@@ -132,7 +132,7 @@ except KeyboardInterrupt:
     print("Terminated!");
     sys.exit(1)
 except RuntimeError as er:
-    print("Error!",er);
+    raise er;
     sys.exit(1);
 finally:
     ser.close()

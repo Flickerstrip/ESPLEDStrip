@@ -7,3 +7,5 @@ build
 credentials.txt
 /lib
 .piolibdeps/
+uploader/units*.csv
+
