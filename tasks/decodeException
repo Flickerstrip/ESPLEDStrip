@@ -1,0 +1,10 @@
+#!/bin/bash
+
+ROOT=$(cd `dirname "${BASH_SOURCE[0]}"`/.. && pwd)
+
+STACK_TRACE_JAR=/Users/julian/Documents/Programming/tinkering/EspStackTraceDecoder.jar
+ADDR2LINE=/Users/julian/.platformio/packages/toolchain-xtensa/bin/xtensa-lx106-elf-addr2line
+ELFFILE="$ROOT/.pioenvs/esp12e/firmware.elf"
+EXCEPTION_DUMP=$1
+
+java -jar $STACK_TRACE_JAR $ADDR2LINE $ELFFILE $EXCEPTION_DUMP
