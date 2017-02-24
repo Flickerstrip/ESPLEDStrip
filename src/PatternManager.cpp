@@ -619,14 +619,14 @@ void PatternManager::writePatternData(uint8_t patternId, Stream * stream) {
         //read page
         uint32_t readLocation = pat->address + 0x100 + readOffset;
         uint32_t readLength = min(0x100,pat->len - 0x100 - readOffset);
-        Serial.print("reading at 0x");
-        Serial.print(readLocation,HEX);
-        Serial.print(" [");
-        Serial.print(readLength);
-        Serial.print("]");
-        Serial.println();
+        //Serial.print("reading at 0x");
+        //Serial.print(readLocation,HEX);
+        //Serial.print(" [");
+        //Serial.print(readLength);
+        //Serial.print("]");
+        //Serial.println();
         this->flash->readBytes(readLocation,(byte*)&readbuf,readLength);
         stream->write(readbuf,readLength);
-        Serial.println("wrote page");
+        //Serial.println("wrote page");
     }
 }

@@ -85,24 +85,41 @@ byte heldTriggered = 0;
 
 bool globalDebug = false;
 
+long last = millis();
+void mark(const char * text) {
+    //long current = millis();
+    //Serial.print(text);
+    //Serial.print(": ");
+    //Serial.println(current - last);
+    //last = current;
+}
+
 void setup() {
     Serial.begin(115200);
+    
+    mark("Start");
     handleCradle(&flash);
+    mark("Handled cradle");
 
     pinMode(LED_STRIP,OUTPUT);
     pinMode(BUTTON_LED,OUTPUT);
     pinMode(BUTTON,INPUT);
 
+    mark("Setup ports");
     handleStartupHold();
+    mark("Startup hold");
 
     createMacString();
+    WiFi.hostname("Flickerstrip");
 
     Serial.println("\n\n");
 
     Serial.print("Flickerstrip Firmware Version: ");
     Serial.println(GIT_CURRENT_VERSION);
 
+    mark("About to init config");
     initializeConfiguration();
+    mark("initted config");
 
     strip.begin(LED_STRIP);
     if (checkbit(config.flags,FLAG_SELF_TEST) == FLAG_SELF_TEST_NEEDED) {
@@ -117,6 +134,8 @@ void setup() {
         saveConfiguration();
     }
 
+    mark("completed checks");
+
     //set up strip
     if (config.stripLength > MAX_STRIP_LENGTH) config.stripLength = MAX_STRIP_LENGTH;
     strip.setLength(config.stripLength);
@@ -124,6 +143,8 @@ void setup() {
     strip.setEnd(config.stripEnd);
     strip.setReverse((config.flags >> FLAG_REVERSED) & 0x1);
     patternManager.setTransitionDuration(config.fadeDuration);
+
+    mark("set up strip");
 
     if (strcmp(config.version,GIT_CURRENT_VERSION) != 0) {
         Serial.println("Firmware version updated!");
@@ -133,6 +154,8 @@ void setup() {
 
     patternManager.loadPatterns();
 
+    mark("loaded patterns");
+
     Serial.print("Loaded ");
     Serial.print(patternManager.getPatternCount());
     Serial.println(" patterns");
@@ -141,7 +164,9 @@ void setup() {
     lastSyncSent = -1;
     lastPingCheck = -1;
     pingDelay = 0;
-    patternManager.selectPatternByIndex(config.selectedPattern);
+    patternManager.selectPatternById(config.selectedPattern);
+
+    mark("selected pattern");
 
     digitalWrite(BUTTON_LED,BUTTON_LED_ON);
     Serial.println("ready");
@@ -273,7 +298,7 @@ void loadDefaultConfiguration() {
     config.password[0] = 0;
     config.stripName[0] = 0;
     config.groupName[0] = 0;
-    config.selectedPattern = 0;
+    config.selectedPattern = 1;
     config.brightness = 10;
     config.cycle = 0;
     config.stripLength = 150;
@@ -1102,7 +1127,7 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
                 if (remaining < pageReadSize) pageReadSize = remaining;
                 readSize = readBytes(client,(char*)&pagebuffer,pageReadSize,1000);
                 if (readSize != pageReadSize) {
-                    Serial.println("MISMATCHED READ!!");
+                    Serial.println("MISMATCHED READ!!"); //TODO add more info here
                     Serial.println(readSize,HEX);
                     return false;
                 }
@@ -1271,10 +1296,12 @@ bool createAccessPoint() {
     IPAddress ip = IPAddress(192, 168, 1, 1);
     IPAddress netmask = IPAddress(255, 255, 255, 0);
 
+    mark("creating ap");
     WiFi.mode(WIFI_AP);
     delay(50);
     WiFi.softAPConfig(ip,ip,netmask);
     WiFi.softAP(defaultNetworkName);
+    mark("done creating ap");
 
     Serial.print("Created access point: ");
     Serial.print(defaultNetworkName);
@@ -1339,8 +1366,10 @@ void registerWithMaster() {
 }
 
 void loop() {
+    mark("loop start");
     WiFi.mode(WIFI_OFF);
     delay(100);
+    mark("disabled wifi, delaying");
 
     while(true) {
         disconnect = false;
@@ -1348,11 +1377,14 @@ void loop() {
         bool connected = false;
         bool isConfigNetworkSlave = false;
 
+        mark("trying to connect");
         if (!ignoreConfiguredNetwork && strlen(config.ssid)) connected = tryConnect(config.ssid,config.password,3);
+        mark("completed 3 attempts");
 
         //start own wifi network if we failed to connect above
         if (!connected) {
             int n = WiFi.scanNetworks();
+            mark("done scanning networks");
             bool foundConfigNetwork = false;
             for (int i = 0; i < n; ++i) {
                 char ssid[50];
@@ -1374,7 +1406,9 @@ void loop() {
                 }
             }
 
+            mark("done processing networks");
             if (!connected) connected = createAccessPoint();
+            mark("done creating ap");
         }
 
         if (!connected) continue;
