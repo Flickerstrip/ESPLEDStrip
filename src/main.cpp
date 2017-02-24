@@ -290,7 +290,8 @@ void factoryReset() {
         delay(50);
     }
 
-    ESP.restart();
+    ESP.eraseConfig();
+    ESP.reset();
 }
 
 void loadDefaultConfiguration() {
@@ -533,16 +534,6 @@ void nextMode() {
         selectPattern(0);
     } else {
         selectPattern(patternManager.getSelectedIndex()+1);
-    }
-}
-
-void nextModeWithToggle() {
-    if (!isPowerOn()) {
-        toggleStrip(true);
-    } else if(config.selectedPattern+1 >= patternManager.getPatternCount()) {
-        selectPattern(0);
-        toggleStrip(false);
-    } else {
     }
 }
 
@@ -1372,6 +1363,9 @@ void loop() {
     mark("disabled wifi, delaying");
 
     while(true) {
+        strip.clear();
+        strip.show();
+
         disconnect = false;
         reconnect = false;
         bool connected = false;
