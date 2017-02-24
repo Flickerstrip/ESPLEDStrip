@@ -57,6 +57,7 @@ public:
     bool loadNextFrame(LEDStrip * strip);
 
     int serializePatterns(char * buf, int len);
+    int streamSerializePatterns(Stream * stream, bool countOnly);
     void jsonPatterns(JsonArray& json);
 
     int getPatternDataLength(uint8_t patternId);

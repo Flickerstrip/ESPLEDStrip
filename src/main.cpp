@@ -415,7 +415,6 @@ void selectPattern(byte pattern) {
     saveConfiguration();
 }
 
-char patternBuffer[1000];
 void sendStatus(WiFiClient * client) {
 
 
@@ -457,13 +456,12 @@ void sendStatus(WiFiClient * client) {
     patternManager.getAvailableBlocks(),
     patternManager.getTotalBlocks());
 
-    int remaining = BUFFER_SIZE - n;
-    char * ptr = buf + n;
-    int patternBufferLength = patternManager.serializePatterns(ptr,remaining);
-    ptr[patternBufferLength] = '}';
-    ptr[patternBufferLength+1] = 0;
-
-    sendHttp(client,200,"OK","application/json",buf);
+    int patternLength = patternManager.streamSerializePatterns(client,true);
+    int totalLength = n + patternLength + 1; //the size of the core json, the patterns, and the ending bracket
+    sendHttpHeader(client,200,"OK","application/json",totalLength);
+    client->write((char*)&buf,n);
+    patternManager.streamSerializePatterns(client,false);
+    client->write('}');
 }
 
 /*
@@ -1415,6 +1413,7 @@ void loop() {
             tick();
 
             WiFiClient client = server.available();
+            client.setNoDelay(1);
             if (client) {
                 lastRequest = millis();
                 handleWebClient(client);

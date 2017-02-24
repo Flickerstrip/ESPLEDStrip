@@ -548,6 +548,45 @@ int PatternManager::serializePatterns(char * buf, int bufferSize) {
     return ptr - buf;
 }
 
+// Pass "countOnly" to prevent sending any data to the stream
+int PatternManager::streamSerializePatterns(Stream * stream, bool countOnly) {
+    PatternMetadata * pat;
+    int written = 0;
+    int size;
+    long t;
+    const int BUF_SIZE=150;
+    char lineBuffer[BUF_SIZE];
+    char * buf = (char*)&lineBuffer;
+
+    size = snprintf(buf,BUF_SIZE,"[");
+    written += size;
+    if (!countOnly) stream->write(buf,size);
+
+    bool first = true;
+    for (int i=1; i<this->patternCount; i++) {
+        if (!first) {
+            size = snprintf(buf,BUF_SIZE,",");
+            written += size;
+            t = millis();
+            if (!countOnly) stream->write(buf,size);
+        }
+        pat = &this->patterns[i];
+
+        t = millis();
+        size = snprintf(buf,BUF_SIZE,"{\"id\":%d,\"name\":\"%s\",\"frames\":%d,\"pixels\":%d,\"flags\":%d,\"fps\":%d}",pat->id,pat->name,pat->frames,pat->pixels,pat->flags,pat->fps);
+        written += size;
+        t = millis();
+        if (!countOnly) stream->write(buf,size);
+        first = false;
+    }
+
+    size = snprintf(buf,BUF_SIZE,"]");
+    written += size;
+    if (!countOnly) stream->write(buf,size);
+
+    return written;
+}
+
 
 void PatternManager::jsonPatterns(JsonArray& arr) {
     for (int i=1; i<this->patternCount; i++) {
