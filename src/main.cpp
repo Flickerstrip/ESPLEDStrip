@@ -391,6 +391,8 @@ void serialLine() {
         ESP.restart();
     } else if (strstr(serialBuffer,"reboot") != NULL) {
         ESP.restart();
+    } else if (strstr(serialBuffer,"reconnect") != NULL) {
+        reconnect = true;
     } else if (strstr(serialBuffer,"config:") != NULL) {
         char * start = strchr(serialBuffer,':');
         start++;
