@@ -19,12 +19,17 @@
 
 void debugHex(const char *buf, int len);
 
+#undef DEBUG_SAVE
+
 class PatternManager {
 public:
     PatternManager(M25PXFlashMemory * mem);
 
     void loadPatterns();
     void echoPatternTable();
+    void checkPatterns();
+    int checkPattern(PatternReference * pat);
+    void checkPatternById(uint8_t id);
     void addPatternFromProgmem(const char * name, int frames, int pixels, int fps, const byte * data, int n);
     void resetPatternsToDefault();
     void clearPatterns();
@@ -87,6 +92,7 @@ private:
     int transitionDuration;
     long lastFrame;
 
+    PatternReference * findPatternReferenceById(uint8_t patternId);
     uint8_t findPatternById(uint8_t patternId);
     int insertPatternReference(PatternReference * ref);
     void saveReferenceTable();

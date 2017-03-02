@@ -107,6 +107,7 @@ uint8_t PatternManager::createId() {
     return pats + 1;
 }
 
+//DEBUG
 void PatternManager::echoPatternTable() {
     for (int i=0; i<this->patternCount; i++) {
         Serial.print("[");
@@ -115,7 +116,7 @@ void PatternManager::echoPatternTable() {
             Serial.println("] EMPTY");
             continue;
         }
-        Serial.print("] (");
+        Serial.print("] (id: ");
         Serial.print(this->patterns[i].id);
         Serial.print(") 0x");
         Serial.print(this->patterns[i].address,HEX);
@@ -131,12 +132,77 @@ void PatternManager::echoPatternTable() {
     for (int i=0; i<addressedPatterns; i++) {
         Serial.print("[");
         Serial.print(i);
-        Serial.print("] (");
+        Serial.print("] (id ");
         Serial.print(this->patternsByAddress[i].id);
         Serial.print(") 0x");
         Serial.print(this->patternsByAddress[i].address,HEX);
         Serial.print(" len:");
         Serial.print(this->patternsByAddress[i].len,DEC);
+        Serial.println();
+    }
+}
+
+//DEBUG
+void PatternManager::checkPatterns() {
+    Serial.println("Patterns by address: ");
+    uint8_t addressedPatterns = this->hasTestPattern() ? this->patternCount-1 : this->patternCount;
+    for (int i=0; i<addressedPatterns; i++) {
+        PatternReference * pat = &this->patternsByAddress[i];
+
+        int brokenPages = this->checkPattern(pat);
+
+        Serial.print("[");
+        Serial.print(i);
+        Serial.print("] (id ");
+        Serial.print(pat->id);
+        Serial.print(") 0x");
+        Serial.print(pat->address,HEX);
+        Serial.print(" len:");
+        Serial.print(pat->len,DEC);
+        Serial.print(" (");
+        Serial.print(brokenPages);
+        Serial.print(")");
+        Serial.println();
+    }
+}
+
+//DEBUG
+int PatternManager::checkPattern(PatternReference * pat) {
+    int pageLength = 0x100;
+    byte checkbuf[pageLength];
+
+    uint32_t readLocation = pat->address + 0x100;
+    uint32_t bytesRead = 0;
+    int brokenPages = 0;
+    while(bytesRead < pat->len - 0x100) {
+        yield();
+        int bytesToRead = min(pageLength,pat->len - 0x100 - bytesRead);
+        this->flash->readBytes(readLocation + bytesRead,(byte*)&checkbuf,bytesToRead);
+        bytesRead += bytesToRead;
+
+        bool foundNonwhite = false;
+        for(int i=0; i<bytesToRead; i++) {
+            if (checkbuf[i] != 0xff) {
+                foundNonwhite = true;
+                break;
+            }
+        }
+        if (!foundNonwhite) {
+            brokenPages++;
+        }
+    }
+
+    return brokenPages;
+}
+
+void PatternManager::checkPatternById(uint8_t id) {
+    PatternReference * pat = this->findPatternReferenceById(id);
+    int brokenPages = this->checkPattern(pat);
+    if (brokenPages > 0) {
+        Serial.print("Pattern has ");
+        Serial.print(brokenPages);
+        Serial.print(" broken pages (id ");
+        Serial.print(id);
         Serial.println();
     }
 }
@@ -204,9 +270,6 @@ void PatternManager::clearPatterns() {
 void PatternManager::selectPatternByIndex(byte n) {
     n = n + 1; //0xff is used for test pattern
 
-    Serial.print("Selecting Pattern: ");
-    Serial.println(n);
-
     this->freezeFrameIndex = -1;
 
     if (this->patterns[n].address == 0xffffffff) return;
@@ -238,8 +301,6 @@ void PatternManager::setTransitionDuration(int duration) {
 
 void PatternManager::deletePatternByIndex(byte n) {
     n = n + 1;
-    Serial.print("Deleting Pattern: ");
-    Serial.println(n);
     uint32_t address = this->patterns[n].address;
     uint32_t first = this->patterns[n].address & 0xfffff000;
     uint32_t count = (this->patterns[n].len / 0x1000) + 1;
@@ -345,9 +406,16 @@ int PatternManager::saveLedPatternMetadata(PatternMetadata * pat, bool previewPa
     if (!previewPattern) this->patternCount++;
     this->saveReferenceTable();
 
-    this->echoPatternTable();
-
     return pat->id;
+}
+
+PatternReference * PatternManager::findPatternReferenceById(uint8_t patternId) {
+    uint8_t addressedPatterns = this->hasTestPattern() ? this->patternCount-1 : this->patternCount;
+    for (int i=0; i<addressedPatterns; i++) {
+        PatternReference * ref = &this->patternsByAddress[i];
+        if (ref->id == patternId) return ref;
+    }
+    return NULL;
 }
 
 uint8_t PatternManager::findPatternById(uint8_t patternId) {
@@ -365,6 +433,7 @@ void PatternManager::saveLedPatternBody(uint8_t patternId, uint32_t patternStart
 
     uint32_t writeLocation = pat->address + 0x100 + patternStartPage*0x100;
 
+#ifdef DEBUG_SAVE
     byte checkbuf[len];
     this->flash->readBytes(writeLocation,(byte*)&checkbuf,len);
     bool clean = true;
@@ -374,13 +443,16 @@ void PatternManager::saveLedPatternBody(uint8_t patternId, uint32_t patternStart
             break;
         }
     }
-    Serial.print("Writing pattern ");
-    Serial.print(patternId);
-    Serial.print(" [0x");
-    Serial.print(writeLocation,HEX);
-    Serial.print("]");
-    if (clean == false) Serial.print(" UNCLEAN!");
-    Serial.println();
+    if (clean == false) {
+        Serial.print("Writing pattern ");
+        Serial.print(patternId);
+        Serial.print(" [0x");
+        Serial.print(writeLocation,HEX);
+        Serial.print("]");
+        Serial.print(" UNCLEAN!");
+        Serial.println();
+    }
+#endif
 
     this->flash->programBytes(writeLocation,payload,len);
 }

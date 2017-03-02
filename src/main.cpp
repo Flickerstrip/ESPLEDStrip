@@ -35,6 +35,8 @@
 
 // use ESP.getResetReason() TODO
 
+#undef DEBUG_PATTERN_CHECK
+
 #define MAX_STRIP_LENGTH 750
 M25PXFlashMemory flash(SPI_SCK,SPI_MOSI,SPI_MISO,MEM_CS);
 LEDStrip strip;
@@ -393,6 +395,8 @@ void serialLine() {
         ESP.restart();
     } else if (strstr(serialBuffer,"reconnect") != NULL) {
         reconnect = true;
+    } else if (strstr(serialBuffer,"check") != NULL) {
+        patternManager.checkPatterns();
     } else if (strstr(serialBuffer,"config:") != NULL) {
         char * start = strchr(serialBuffer,':');
         start++;
@@ -1114,19 +1118,19 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
             int readSize;
             long start = millis();
             byte pagebuffer[0x100];
-            //Serial.println("starting loop..");
+            //Serial.print("starting loop.. remaining: ");
+            //Serial.println(remaining);
             while(remaining > 0) {
                 int pageReadSize = 0x100;
                 if (remaining < pageReadSize) pageReadSize = remaining;
                 readSize = readBytes(client,(char*)&pagebuffer,pageReadSize,1000);
                 if (readSize != pageReadSize) {
-                    Serial.println("MISMATCHED READ!!"); //TODO add more info here
+                    Serial.print("MISMATCHED READ: ");
                     Serial.println(readSize,HEX);
                     return false;
                 }
                 remaining -= readSize;
                 patternManager.saveLedPatternBody(id,page++,(byte*)&pagebuffer,0x100);
-                //Serial.println("finished saving body..");
 
                 //int percent = floor(100.0 * (double)(contentLength - remaining) / double(contentLength));
                 //char res[20];
@@ -1140,6 +1144,9 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
                 //Serial.println(millis() - start);
             }
             //Serial.println("TRANSFER COMPLETE");
+#ifdef DEBUG_PATTERN_CHECK
+            patternManager.checkPatternById(id); //DEBUG
+#endif
             patternManager.selectPatternById(id);
 
             //client.println(0);
