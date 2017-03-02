@@ -277,6 +277,9 @@ void fillStrip(byte r, byte g, byte b) {
 }
 
 void factoryReset() {
+    WiFi.mode(WIFI_OFF);
+    delay(100);
+
     Serial.println("Clearing configuration and rebooting");
     EEPROM.begin(EEPROM_SIZE); //IMPORTANT: Use EEPROM_SIZE or EEPROM will be cleared down to this parameter
     for (int i=0; i<EEPROM_SIZE; i++) {
@@ -1248,7 +1251,7 @@ void startSSDP() {
     SSDP.setSerialNumber("12341234");
     SSDP.setURL("index.html");
     SSDP.setModelName("Flickerstrip LED Strip");
-    SSDP.setModelNumber("fl_100");
+    SSDP.setModelNumber("fl_1");
     SSDP.setModelURL("http://flickerstrip.com");
     SSDP.setManufacturer("HomeAutomaton");
     SSDP.setManufacturerURL("http://homeautomaton.com");
