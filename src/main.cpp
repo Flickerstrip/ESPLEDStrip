@@ -77,6 +77,8 @@ int pingDelay;
 int registeredStripCount = 0;
 IPAddress registeredStrips[MAX_REGISTERED_STRIPS];
 
+uint32_t configVersion;
+uint32_t firmwareVersion;
 
 /////////////
 bool accessPoint = false;
@@ -139,7 +141,7 @@ void setup() {
     mark("completed checks");
 
     //set up strip
-    if (config.stripLength > MAX_STRIP_LENGTH) config.stripLength = MAX_STRIP_LENGTH;
+    //if (config.stripLength > MAX_STRIP_LENGTH) config.stripLength = MAX_STRIP_LENGTH;
     strip.setLength(config.stripLength);
     strip.setStart(config.stripStart);
     strip.setEnd(config.stripEnd);
@@ -148,10 +150,24 @@ void setup() {
 
     mark("set up strip");
 
-    if (strcmp(config.version,GIT_CURRENT_VERSION) != 0) {
-        Serial.println("Firmware version updated!");
+    configVersion = convertSemanticVersion(config.version);
+    firmwareVersion = convertSemanticVersion(GIT_CURRENT_VERSION);
+
+    Serial.print("Config Version: ");
+    Serial.println(configVersion);
+    Serial.print("Firmware Version: ");
+    Serial.println(firmwareVersion);
+
+    if (configVersion == 0) {
+        Serial.println("Invalid configuration version, factory reset initiated..");
+        factoryReset();
+    }
+
+    if (configVersion < firmwareVersion) {
         //TODO decide what we want to do here... run some kinda patcher?
+        Serial.println("Firmware version updated!");
         memcpy(config.version,GIT_CURRENT_VERSION,strlen(GIT_CURRENT_VERSION)+1);
+        saveConfiguration();
     }
 
     patternManager.loadPatterns();

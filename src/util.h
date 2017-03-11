@@ -1,6 +1,32 @@
 #ifndef util_h
 #define util_h
 
+uint32_t convertSemanticVersion(const char * s) {
+    char buf[15];
+    char * start = (char*)&buf;
+    strncpy(start,s,15);
+
+    if (start[0] == 'v') start++;
+
+    char * end = strchr(start,'.'); //first dot
+    if (end == NULL) return 0;
+    end[0] = '\0';
+
+    uint32_t version = 0;
+    version += 1000 * 1000 * atoi(start);
+
+    start = end+1;
+    end = strchr(start,'.'); //second dot
+    if (end == NULL) return 0;
+    end[0] = '\0';
+    version += 1000 * atoi(start);
+
+    start = end+1;
+    version += atoi(start);
+
+    return version;
+}
+
 void *memchr(const void *s, int c, size_t n)
 {
     unsigned char *p = (unsigned char*)s;

@@ -17,6 +17,7 @@ const byte FLAG_SELF_TEST_NEEDED = 1; //set by cradle
 #define NAME_LENGTH 50
 
 struct Configuration {
+  char version[20];
   char ssid[SSID_LENGTH];
   char password[PASSWORD_LENGTH];
   char stripName[NAME_LENGTH];
@@ -30,7 +31,6 @@ struct Configuration {
   int stripEnd;
   int fadeDuration;
   byte failedBootCounter;
-  char version[20];
 };
 
 Configuration config;
