@@ -5,7 +5,8 @@ ROOT=$(cd `dirname "${BASH_SOURCE[0]}"`/.. && pwd)
 REPO=Flickerstrip/FlickerstripFirmware
 RELEASE=`git describe --abbrev=0`
 SITEROOT=/Users/julian/Documents/Programming/flickerstrip.com
-  
+VERSION_NOTE=$1
+
 uploadFile() {
     FILE_PATH=$1
     FILE_NAME=$(basename "$FILE_PATH")
@@ -53,6 +54,6 @@ else
     cp $ROOT/releases/$RELEASE.bin $SITEROOT/firmware/$RELEASE.bin
 
     UNIXNOW=`date +%s`
-    echo '{"latest":"'$RELEASE'","updated":"'$UNIXNOW'"}' > $SITEROOT/firmware/latest.json
+    echo '{"latest":"'$RELEASE'","updated":"'$UNIXNOW'","note":"'$VERSION_NOTE'"}' > $SITEROOT/firmware/latest.json
 fi
 
