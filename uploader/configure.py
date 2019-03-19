@@ -81,6 +81,7 @@ def main(ser):
     ser.write("mac\n");
     ser.readline() #echoed line
     mac = ser.readline().strip(); #mac address
+    print(mac);
     if not re.match("[0-9a-f]{1,2}([-:])[0-9a-f]{1,2}(\\1[0-9a-f]{1,2}){4}$", mac.lower()):
         raise RuntimeError("Failed to read mac address!",mac);
 

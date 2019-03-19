@@ -47,6 +47,7 @@ WiFiServer server(80);
 WiFiUDP udp;
 
 #define BUFFER_SIZE 3000
+#define FAILED_BOOT_LIMIT 10
 char buf[BUFFER_SIZE];
 
 char defaultNetworkName[] = "Flickerstrip";
@@ -100,7 +101,7 @@ void mark(const char * text) {
 
 void setup() {
     Serial.begin(115200);
-    
+
     mark("Start");
     handleCradle(&flash);
     mark("Handled cradle");
@@ -327,7 +328,7 @@ void loadDefaultConfiguration() {
     config.stripStart = 0;
     config.stripEnd = -1;
     config.fadeDuration = 0;
-    config.failedBootCounter = 10;
+    config.failedBootCounter = FAILED_BOOT_LIMIT;
     config.flags = (FLAG_CONFIGURED_CONFIGURED << FLAG_CONFIGURED ) &            //Set configured bit
                    (FLAG_REVERSED_FALSE                << FLAG_REVERSED     ) &                             //Set reversed bit
                    (FLAG_SELF_TEST_DONE                << FLAG_SELF_TEST    );                             //Set self test bit
@@ -431,6 +432,32 @@ void serialLine() {
     } else if (strstr(serialBuffer,"patterns") != NULL) {
         Serial.println("Pattern Table: ");
         patternManager.echoPatternTable();
+    } else if (strstr(serialBuffer,"identify") != NULL) {
+        char * start = strchr(serialBuffer,':');
+        start++;
+        char * end = strchr(start,',');
+
+        memcpy((char *)(&ident.uid),start,end-start);
+        ident.uid[36] = 0;
+        start = end + 1;
+        end = strchr(start,',');
+        end++;
+
+        ident.batch = atoi(start);
+        ident.unit = atoi(end);
+
+        Serial.print("set identity: ");
+        Serial.print(ident.uid);
+        Serial.print(" ");
+        Serial.print(ident.batch);
+        Serial.print(" ");
+        Serial.print(ident.unit);
+        Serial.println();
+        EEPROM.begin(EEPROM_SIZE); //IMPORTANT: Use EEPROM_SIZE or EEPROM will be cleared down to this parameter
+        for (int i=0; i<sizeof(Identity); i++) {
+            EEPROM.write(EEPROM_OTP+i,*((byte*)&ident+i));
+        }
+        EEPROM.end();
     } else if (strstr(serialBuffer,"dump:") != NULL) {
         char * start = strchr(serialBuffer,':');
         start++;
@@ -596,7 +623,7 @@ void tick() {
     }
 
     if (connecting) {
-        setPulse(true); 
+        setPulse(true);
     } else if (isPowerOn()) {
         setLed(0);
     } else {
@@ -609,7 +636,7 @@ void tick() {
 
     if (!stableUptime && millis() > 7000) { //we've been up for 7 seconds, we're no longer suspicious of misbehavior
         stableUptime = true;
-        config.failedBootCounter = 10;
+        config.failedBootCounter = FAILED_BOOT_LIMIT;
         saveConfiguration();
     }
 }
@@ -624,7 +651,7 @@ void buttonTick() {
             //very long press
             if (isPowerOn()) toggleStrip(false);
             buttonDown = -1;
-        } 
+        }
     } else {
         if (buttonDown > 0) {
             if (downTime > 500) {
@@ -641,7 +668,7 @@ void buttonTick() {
         } else if (buttonDown == -1) {
             buttonDown = -currentTime; //debounce the button
         } else if (buttonDown < 0) {
-            if (currentTime+buttonDown > 100) buttonDown = 0; //reset the button debounce
+            if (currentTime+buttonDown > 500) buttonDown = 0; //reset the button debounce
         }
     }
 }
@@ -822,7 +849,7 @@ void loadFirmware(WiFiClient & client, uint32_t packetSize, char * boundary) {
         } else {
             Serial.println("Begin Update");
         }
-        
+
         while(!Update.isFinished()) {
             yield();
             int n;

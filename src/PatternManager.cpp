@@ -207,23 +207,23 @@ void PatternManager::checkPatternById(uint8_t id) {
     }
 }
 
-void PatternManager::addPatternFromProgmem(const char * name, int frames, int pixels, int fps, const byte * data, int n) {
+void PatternManager::addPatternFromProgmem(const PatternDefinition * patternDef) {
     PatternMetadata newpat;
-    memcpy(newpat.name, name, strlen(name)+1);
-    newpat.frames = frames;
-    newpat.pixels = pixels;
-    newpat.fps = fps;
+    memcpy(newpat.name, patternDef->name, strlen(patternDef->name)+1);
+    newpat.frames = patternDef->frames;
+    newpat.pixels = patternDef->pixels;
+    newpat.fps = patternDef->fps;
     newpat.flags = 0;
 
     uint8_t id = this->saveLedPatternMetadata(&newpat,false);
 
-    int remaining = n;
+    int remaining = patternDef->size;
     int page = 0;
     while(remaining > 0) {
         int pageReadSize = 0x100;
         if (remaining < pageReadSize) pageReadSize = remaining;
         for (int i=0; i<pageReadSize; i++) {
-            byte a = pgm_read_byte_near(data+i+(page*0x100));
+            byte a = pgm_read_byte_near(patternDef->data+i+(page*0x100));
             this->buf[i] = a;
         }
         remaining -= pageReadSize;
@@ -234,14 +234,19 @@ void PatternManager::addPatternFromProgmem(const char * name, int frames, int pi
 void PatternManager::resetPatternsToDefault() {
     this->clearPatterns();
 
-    this->addPatternFromProgmem("Default",7,7,3,defaultData,DEFAULT_SIZE);
-    this->addPatternFromProgmem("Chasing Rainbow 15",270,15,18,chasingData,CHASING_SIZE);
-    this->addPatternFromProgmem("3ColorComets",30,30,20,cometsData,COMETS_SIZE);
-    this->addPatternFromProgmem("Rainbow Pixel",18,18,10,rainbowpixelData,RAINBOWPIXEL_SIZE);
-    this->addPatternFromProgmem("Warp",18,25,15,warpData,WARP_SIZE);
-    this->addPatternFromProgmem("Fire Sparkle",100,100,30,sparkleData,SPARKLE_SIZE);
-    this->addPatternFromProgmem("Rainbow Chase",150,150,30,chaseData,CHASE_SIZE);
-
+    this->addPatternFromProgmem(&patternDef173); //Adds Cracksauce
+    this->addPatternFromProgmem(&patternDef154); //Adds Carnival Rainbow
+    this->addPatternFromProgmem(&patternDef367); //Adds PanShift
+    this->addPatternFromProgmem(&patternDef45); //Adds Chasing Rainbow 15
+    this->addPatternFromProgmem(&patternDef541); //Adds LED Totem Color Splash
+    this->addPatternFromProgmem(&patternDef539); //Adds LED Totem Rainbow Spread
+    this->addPatternFromProgmem(&patternDef540); //Adds LED Totem Spiral Bounce
+    this->addPatternFromProgmem(&patternDef25); //Adds Fire Sparkle
+    this->addPatternFromProgmem(&patternDef2); //Adds Ember Crawl
+    this->addPatternFromProgmem(&patternDef672); //Adds Police Lights - Quinte Flash
+    this->addPatternFromProgmem(&patternDef642); //Adds Sam- JulieSetting2
+    this->addPatternFromProgmem(&patternDef546); //Adds Rainbow Chase
+    this->addPatternFromProgmem(&patternDef249); //Adds Some Fireworks
 }
 
 void PatternManager::clearPatterns() {
@@ -538,7 +543,7 @@ bool PatternManager::loadNextFrame(LEDStrip * strip) {
 
     bool isTransitioning = millis() - this->patternTransitionTime < this->transitionDuration;//we're in the middle of a transition
 
-    bool needsUpdate = false; 
+    bool needsUpdate = false;
 
     if (this->freezeFrameIndex >= 0) {
         //we're in freeze frame mode

@@ -30,7 +30,8 @@ public:
     void checkPatterns();
     int checkPattern(PatternReference * pat);
     void checkPatternById(uint8_t id);
-    void addPatternFromProgmem(const char * name, int frames, int pixels, int fps, const byte * data, int n);
+    void addPatternFromProgmem(const PatternDefinition * patternDef);
+    // void addPatternFromProgmem(const char * name, int frames, int pixels, int fps, const byte * data, int n);
     void resetPatternsToDefault();
     void clearPatterns();
     void deletePatternByIndex(byte n);
@@ -100,5 +101,3 @@ private:
 };
 
 #endif
-
-

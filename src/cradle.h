@@ -12,7 +12,7 @@ void handleOTPWrite(M25PXFlashMemory* flash);
 
 bool done;
 
-struct Identity { 
+struct Identity {
     char uid[37];
     uint32_t batch;
     uint32_t unit;
@@ -23,6 +23,10 @@ Identity ident;
 //Note: While in cradle mode, the SPI bus is unavailable (eg. flash memory)
 void handleCradle(M25PXFlashMemory* flash) {
     if (!detectCradle()) {
+        if (!loadConfiguration()) {
+            loadDefaultConfiguration();
+        }
+
         if (isOTPReady()) handleOTPWrite(flash);
         return;
     }
