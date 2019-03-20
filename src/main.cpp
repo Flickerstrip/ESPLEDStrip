@@ -322,9 +322,9 @@ void loadDefaultConfiguration() {
     config.stripName[0] = 0;
     config.groupName[0] = 0;
     config.selectedPattern = 1;
-    config.brightness = 10;
+    config.brightness = 50;
     config.cycle = 0;
-    config.stripLength = 150;
+    config.stripLength = 250;
     config.stripStart = 0;
     config.stripEnd = -1;
     config.fadeDuration = 0;
