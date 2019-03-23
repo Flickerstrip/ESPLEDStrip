@@ -234,6 +234,7 @@ void PatternManager::addPatternFromProgmem(const PatternDefinition * patternDef)
 void PatternManager::resetPatternsToDefault() {
     this->clearPatterns();
 
+<<<<<<< HEAD
     this->addPatternFromProgmem(&patternDef541); //LED Totem Color Splash
     this->addPatternFromProgmem(&patternDef540); //LED Totem Spiral Bounce
     this->addPatternFromProgmem(&patternDef536); //LED Totem Rainbow Ripple
@@ -252,6 +253,21 @@ void PatternManager::resetPatternsToDefault() {
     this->addPatternFromProgmem(&patternDef823); //LED Totem Rainbow Ricoshet
 
     this->addPatternFromProgmem(&patternDefPinch); //Adds LED Totem Color Pinch
+=======
+    this->addPatternFromProgmem(&patternDef154); //Adds Carnival Rainbow
+    this->addPatternFromProgmem(&patternDef45); //Adds Chasing Rainbow 15
+    this->addPatternFromProgmem(&patternDef173); //Adds Cracksauce
+    this->addPatternFromProgmem(&patternDef2); //Adds Ember Crawl
+    this->addPatternFromProgmem(&patternDef25); //Adds Fire Sparkle
+    this->addPatternFromProgmem(&patternDef541); //Adds LED Totem Color Splash
+    this->addPatternFromProgmem(&patternDef539); //Adds LED Totem Rainbow Spread
+    this->addPatternFromProgmem(&patternDef540); //Adds LED Totem Spiral Bounce
+    this->addPatternFromProgmem(&patternDef367); //Adds PanShift
+    this->addPatternFromProgmem(&patternDef672); //Adds Police Lights - Quinte Flash
+    this->addPatternFromProgmem(&patternDef546); //Adds Rainbow Chase
+    this->addPatternFromProgmem(&patternDef642); //Adds Sam- JulieSetting2
+    this->addPatternFromProgmem(&patternDef249); //Adds Some Fireworks
+>>>>>>> master
 }
 
 void PatternManager::clearPatterns() {

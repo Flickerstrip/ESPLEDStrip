@@ -1,0 +1,5 @@
+#!/bin/bash
+
+cat *.h | grep this
+
+ls *.h | while read a; do echo '#include "patterns/'$a'"'; done
