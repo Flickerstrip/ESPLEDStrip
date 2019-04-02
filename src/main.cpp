@@ -213,17 +213,17 @@ void handleStartupHold() {
     digitalWrite(BUTTON_LED,BUTTON_LED_OFF);
     while(digitalRead(BUTTON) == BUTTON_DOWN) {
         long duration = millis() - start;
-        if (heldTriggered == 0 && duration > 2000) {
+        if (heldTriggered == 0 && duration > 1000) {
             blinkCount(2,100,100);
             heldTriggered++;
         }
 
-        if (heldTriggered == 1 && duration > 7000) {
+        if (heldTriggered == 1 && duration > 5000) {
             blinkCount(4,100,100);
             heldTriggered++;
         }
 
-        if (heldTriggered == 2 && duration > 15000) {
+        if (heldTriggered == 2 && duration > 10000) {
             blinkCount(10,50,50);
             digitalWrite(BUTTON_LED,BUTTON_LED_ON);
             heldTriggered++;
