@@ -1,11 +1,10 @@
 // vim:ts=4 sw=4:
 #include "CaptivePortalConfigurator.h"
 
-CaptivePortalConfigurator::CaptivePortalConfigurator(const char * ssid) {
+CaptivePortalConfigurator::CaptivePortalConfigurator(const char * ssid) : server(80) {
     this->configssid = ssid;
     this->apIP = IPAddress(192, 168, 1, 1);
     this->netMsk = IPAddress(255, 255, 255, 0);
-    this->server = ESP8266WebServer(80);
 }
 
 void CaptivePortalConfigurator::begin() {
