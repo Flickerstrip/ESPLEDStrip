@@ -59,6 +59,9 @@ byte clicksTriggered = 0;
 bool connecting = false;
 long NETWORK_RETRY = 1000*60*3; //retry connection every 3 minutes
 
+byte currentBrightness = 0;
+byte brightnessStops[] = {50, 30, 10, 5};
+
 bool debug = true;
 bool powerOn = true;
 bool stableUptime = false;
@@ -200,6 +203,7 @@ void initializeConfiguration() {
         loadDefaultConfiguration();
         saveConfiguration();
     }
+    currentBrightness = config.brightness;
 }
 
 void createMacString() {
@@ -570,7 +574,7 @@ void sendStatus(WiFiClient * client) {
 
 int currentlyShowingFrame = -1;
 void patternTick() {
-    byte brightness = (255*config.brightness)/100;
+    byte brightness = (255*currentBrightness)/100;
     strip.setBrightness(brightness);
     bool hasNewFrame = patternManager.loadNextFrame(&strip);
 
@@ -656,6 +660,14 @@ void buttonTick() {
         if (buttonDown > 0) {
             if (downTime > 500) {
                 //long press
+                int index = 0;
+                for (int i=0; i<sizeof(brightnessStops); i++) {
+                    if (brightnessStops[i] < currentBrightness) {
+                        index = i;
+                        break;
+                    }
+                }
+                currentBrightness = brightnessStops[index];
             } else {
                 //short press
                 if (!isPowerOn()) {
@@ -1075,6 +1087,7 @@ bool handleRequest(WiFiClient & client, char * buf, int n) {
         bool success = getInteger(buf,"value",&val);
         if (!success) return false;
         config.brightness = val;
+        currentBrightness = val;
         saveConfiguration();
         sendOk(&client);
     } else if (strcmp(urlval,"/pattern/forget") == 0) {
