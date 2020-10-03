@@ -176,7 +176,7 @@ int PatternManager::checkPattern(PatternReference * pat) {
     int brokenPages = 0;
     while(bytesRead < pat->len - 0x100) {
         yield();
-        int bytesToRead = min(pageLength,pat->len - 0x100 - bytesRead);
+        int bytesToRead = min(pageLength,(int)(pat->len - 0x100 - bytesRead));
         this->flash->readBytes(readLocation + bytesRead,(byte*)&checkbuf,bytesToRead);
         bytesRead += bytesToRead;
 
@@ -695,7 +695,7 @@ void PatternManager::writePatternData(uint8_t patternId, Stream * stream) {
     for (uint32_t readOffset=0; readOffset<pat->len-0x100; readOffset += 0x100) {
         //read page
         uint32_t readLocation = pat->address + 0x100 + readOffset;
-        uint32_t readLength = min(0x100,pat->len - 0x100 - readOffset);
+        uint32_t readLength = min(0x100,(int)(pat->len - 0x100 - readOffset));
         //Serial.print("reading at 0x");
         //Serial.print(readLocation,HEX);
         //Serial.print(" [");
